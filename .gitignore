@@ -1,0 +1,45 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+*.env
+
+# Model files and checkpoints
+models/
+*.safetensors
+*.pt
+*.bin
+*.h5
+*.onnx
+*.pb
+*.pth
+*.model
+checkpoint*/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.dylib
+*.dll
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Local data
+data/raw/
+data/processed/
+*.csv
+*.json
+*.txt
+*.pdf
+
+# Logs
+logs/
+*.log
