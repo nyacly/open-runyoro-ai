@@ -68,7 +68,7 @@ Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 ## 💬 Get in Touch
 
 *   **GitHub Issues:** For discussions, bug reports, and feature requests.
-*   **(Optional: Add links to Discord, Slack, Forum, Mailing list here)**
+*   **(Reachout to openrunyoroai@gmail.com )**
 
 ---
 *Let's build something amazing for the Runyoro language!*
