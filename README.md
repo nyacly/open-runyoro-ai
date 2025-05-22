@@ -60,6 +60,28 @@ Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 *   `models/`: Trained model files. (Future)
 *   `docs/`: Documentation. (Future)
 
+## 💬 Interacting with the Language Model
+
+This project includes a way to interactively chat with the trained Runyoro language model. This allows you to test its capabilities and see what it has learned.
+
+### Prerequisites
+
+1.  **Trained Model:** Ensure you have a trained model. The training script `scripts/train_text.py` saves its output to the `models/text/` directory by default. This chat script expects the model and tokenizer to be present there.
+2.  **Dependencies:** Install the necessary Python packages:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+### Running the Chat Script
+
+To start chatting with the model, run the following command from the root directory of the project:
+
+```bash
+python scripts/chat.py
+```
+
+You can then type your Runyoro phrases, and the model will respond. Type "quit" or "exit" to end the chat session.
+
 ## 📜 License
 
 *   **Code:** Licensed under the [MIT License](LICENSE.md) (You'll need to create this file, or ask Jules to create it with a standard MIT template).
