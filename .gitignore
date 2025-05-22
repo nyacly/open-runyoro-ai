@@ -3,6 +3,10 @@ venv/
 env/
 ENV/
 *.env
+.env
+.venv
+env.bak/
+venv.bak/
 
 # Model files and checkpoints
 models/
@@ -16,6 +20,7 @@ models/
 *.model
 checkpoint*/
 
+# Python
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -23,11 +28,26 @@ __pycache__/
 *.so
 *.dylib
 *.dll
+.Python
+develop-eggs/
+eggs/
+.eggs/
+lib/
+lib60/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg
+MANIFEST
 
 # Distribution / packaging
 dist/
 build/
 *.egg-info/
+downloads/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -43,3 +63,21 @@ data/processed/
 # Logs
 logs/
 *.log
+
+# IDE / Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
