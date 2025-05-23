@@ -9,7 +9,6 @@ env.bak/
 venv.bak/
 
 # Model files and checkpoints
-models/
 *.safetensors
 *.pt
 *.bin
@@ -81,3 +80,4 @@ logs/
 .Trashes
 ehthumbs.db
 Thumbs.db
+.venv/
