@@ -1,72 +1,103 @@
 import argparse
 import os
 import json
+import logging
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 
-def ensure_output_dir(filepath):
+# Configure basic logging - This will be configured by the main_ingest.py if imported.
+# If run standalone, this basic config will apply.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
+
+def ensure_output_dir_for_file(filepath):
     """Creates the directory for the given filepath if it doesn't exist."""
     dir_path = os.path.dirname(filepath)
-    if dir_path: # Ensure dir_path is not empty (e.g. if output is in current dir)
+    if dir_path: 
         try:
             os.makedirs(dir_path, exist_ok=True)
-            print(f"Ensured output directory exists: {dir_path}")
+            logging.debug(f"Ensured output directory exists for file: {filepath} (Directory: {dir_path})")
         except OSError as e:
-            print(f"Error: Could not create output directory {dir_path}. {e}")
-            raise # Re-raise to stop execution if output dir can't be made
+            logging.error(f"Could not create output directory {dir_path} for file {filepath}. {e}")
+            raise 
 
-def generate_manifest(input_dir, output_file):
+def create_audio_manifest(input_dir, output_file_path):
     """
-    Scans the input directory for WAV files and generates a manifest file in JSONL format.
+    Scans the input_dir for WAV files and generates a manifest file in JSONL format.
     Each line in the manifest file is a JSON object containing the audio file's absolute path
     and its duration in seconds.
+
+    Args:
+        input_dir (str): Directory containing the audio files (WAV format).
+        output_file_path (str): Path for the output manifest file.
+    
+    Returns:
+        bool: True if manifest generation was successful (or at least attempted), False on critical error (e.g. dir creation).
     """
-    print(f"Scanning input directory: {input_dir}")
-    print(f"Manifest will be written to: {output_file}")
+    abs_input_dir = os.path.abspath(input_dir)
+    abs_output_file = os.path.abspath(output_file_path)
+
+    logging.info(f"--- Starting Manifest Generation ---")
+    logging.info(f"Scanning input directory for WAV files: {abs_input_dir}")
+    logging.info(f"Manifest will be written to: {abs_output_file}")
+
+    if not os.path.isdir(abs_input_dir):
+        logging.error(f"Input directory '{abs_input_dir}' not found or is not a directory.")
+        return False
 
     try:
-        ensure_output_dir(output_file)
+        ensure_output_dir_for_file(abs_output_file)
     except Exception:
-        print(f"Exiting due to output directory creation failure for manifest file.")
-        return
+        logging.error(f"Exiting manifest generation due to output directory creation failure for {abs_output_file}.")
+        return False
 
-    files_processed = 0
-    files_error = 0
+    files_processed_count = 0
+    files_error_count = 0
+    
+    # Ensure we're working with POSIX-style paths for consistency in manifests, if desired.
+    # Though absolute paths are generally fine. Forcing POSIX might be an option if required by specific tools.
+    # For now, os.path.abspath will use the OS-native format.
 
-    with open(output_file, 'w') as f_out:
-        for root, _, files in os.walk(input_dir):
-            for file in files:
-                if file.lower().endswith(".wav"):
-                    filepath = os.path.join(root, file)
-                    abs_filepath = os.path.abspath(filepath)
-                    
-                    try:
-                        # Get audio duration using pydub
-                        audio = AudioSegment.from_wav(abs_filepath)
-                        duration_seconds = audio.duration_seconds
+    try:
+        with open(abs_output_file, 'w', encoding='utf-8') as f_out:
+            for root, _, files in os.walk(abs_input_dir):
+                for file in files:
+                    if file.lower().endswith(".wav"):
+                        filepath = os.path.join(root, file)
+                        # Get absolute path consistently
+                        abs_filepath = os.path.abspath(filepath) 
                         
-                        manifest_entry = {
-                            "audio_filepath": abs_filepath,
-                            "duration": duration_seconds
-                        }
-                        
-                        # Write the JSON object as a line in the output file
-                        f_out.write(json.dumps(manifest_entry) + '\n')
-                        files_processed += 1
-                        # print(f"Processed: {abs_filepath}, Duration: {duration_seconds:.2f}s")
+                        try:
+                            audio = AudioSegment.from_wav(abs_filepath)
+                            duration_seconds = audio.duration_seconds
+                            
+                            manifest_entry = {
+                                "audio_filepath": abs_filepath, # Storing absolute path
+                                "duration": round(duration_seconds, 3) # Round duration to 3 decimal places
+                            }
+                            
+                            f_out.write(json.dumps(manifest_entry, ensure_ascii=False) + '\n')
+                            files_processed_count += 1
+                            logging.debug(f"Added to manifest: {abs_filepath}, Duration: {duration_seconds:.3f}s")
 
-                    except CouldntDecodeError:
-                        print(f"Error: Could not decode WAV file {abs_filepath}. File might be corrupted.")
-                        files_error += 1
-                    except Exception as e:
-                        print(f"Error processing file {abs_filepath}: {e}")
-                        files_error += 1
+                        except CouldntDecodeError:
+                            logging.warning(f"Could not decode WAV file {abs_filepath}. File might be corrupted. Skipping.")
+                            files_error_count += 1
+                        except Exception as e:
+                            logging.warning(f"Error processing file {abs_filepath}: {e}. Skipping.")
+                            files_error_count += 1
+                            
+    except IOError as e:
+        logging.error(f"Could not write to manifest file {abs_output_file}: {e}")
+        return False
                         
-    print(f"\nManifest generation complete.")
-    print(f"Successfully processed and added to manifest: {files_processed} files.")
-    print(f"Files skipped due to errors: {files_error}")
+    logging.info(f"Manifest generation complete.")
+    logging.info(f"Successfully processed and added to manifest: {files_processed_count} files.")
+    logging.info(f"Files skipped due to errors: {files_error_count}")
+    return True
 
-def main():
+
+def main_cli():
+    """CLI entry point for generating an audio manifest."""
     parser = argparse.ArgumentParser(description="Generate an audio manifest file (JSONL) from a directory of WAV files.")
     
     parser.add_argument(
@@ -84,16 +115,7 @@ def main():
     )
 
     args = parser.parse_args()
-
-    abs_input_dir = os.path.abspath(args.input_dir)
-    abs_output_file = os.path.abspath(args.output_file)
-
-    # Validate input directory
-    if not os.path.isdir(abs_input_dir):
-        print(f"Error: Input directory '{abs_input_dir}' not found or is not a directory.")
-        return
-        
-    generate_manifest(abs_input_dir, abs_output_file)
+    create_audio_manifest(args.input_dir, args.output_file)
 
 if __name__ == "__main__":
-    main()
+    main_cli()

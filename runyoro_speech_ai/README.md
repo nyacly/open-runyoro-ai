@@ -12,4 +12,21 @@ This project aims to develop robust Artificial Intelligence capabilities for the
 
 ## Setup
 
-(Instructions to be added once environment setup is stable)
+(Instructions to be added once environment setup is stable and `requirements.txt` is finalized.)
+
+## Data Ingestion Pipeline
+
+A detailed guide on the data ingestion and preprocessing pipeline, including setup, usage of the main orchestration script (`data_ingestion/main_ingest.py`), command-line arguments, and troubleshooting, can be found in:
+
+*   **[Data Ingestion and Preprocessing Documentation](./docs/data_ingestion.md)**
+
+This pipeline handles:
+*   Downloading audio from YouTube.
+*   Ingesting local audio/video files.
+*   Standardizing audio to 16kHz mono WAV format.
+*   Segmenting audio based on silence and duration.
+*   Generating a manifest file for ASR model training.
+
+---
+
+Further sections on SSL training, ASR fine-tuning, etc., will be added as the project progresses.
