@@ -80,16 +80,24 @@ def run_conversion_stage(input_dir, conversion_output_dir):
     attempted_processing = False
 
     for root, _, files in os.walk(input_dir):
+        logging.debug(f"Scanning directory: {root}")
+        if not files:
+            logging.debug(f"No files found in directory: {root}")
         for file in files:
+            logging.debug(f"Found file: {file} in {root}")
             filepath = os.path.join(root, file)
             _, ext = os.path.splitext(file)
+            logging.debug(f"  File extension: {ext} (lowercase: {ext.lower()})")
             
+            logging.debug(f"  Checking if '{ext.lower()}' is in {SUPPORTED_CONVERSION_EXTENSIONS}")
             if ext.lower() in SUPPORTED_CONVERSION_EXTENSIONS:
                 attempted_processing = True
                 if convert_to_standard_wav(filepath, conversion_output_dir):
                     converted_files_count += 1
                 else:
                     error_files_count += 1
+            else:
+                logging.debug(f"  Skipping file {file}: extension '{ext.lower()}' not in supported list.")
     
     logging.info(f"Conversion Stage Complete.")
     logging.info(f"Successfully converted files: {converted_files_count}")
