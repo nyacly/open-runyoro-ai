@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Define supported audio and video extensions for initial conversion processing
 SUPPORTED_CONVERSION_EXTENSIONS = [
-    '.wav', '.mp3', '.m4a', '.ogg', '.flac',  # Audio
+    '.wav', '.mp3', '.m4a', '.ogg', '.flac', '.opus', # Audio
     '.mp4', '.mkv', '.mov', '.avi', '.webm', '.flv', '.wmv'   # Video
 ]
 
