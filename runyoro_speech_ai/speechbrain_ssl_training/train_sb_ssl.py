@@ -1,321 +1,390 @@
 import sys
 import torch
+import torch.nn.functional as F
 import speechbrain as sb
 from speechbrain.dataio.dataset import DynamicItemDataset
 from speechbrain.dataio.dataio import read_audio
-from speechbrain.lobes.models.huggingface_wav2vec import HuggingFaceWav2Vec2 # To load base model
-# We might need a specific SSL loss, e.g., for masked prediction
-# from speechbrain.nnet.losses import ??? (e.g. some form of reconstruction or prediction loss)
-# Or implement a custom one.
+from speechbrain.lobes.models.huggingface_wav2vec import HuggingFaceWav2Vec2
+# import speechbrain.nnet.losses as sb_losses # Not used for now, F.cross_entropy is direct
 
 import os
 import logging
 import argparse
 import yaml # For loading hparams
+import numpy as np # For loading .npy K-means targets
 
 logger = logging.getLogger(__name__)
-# Basic logging configuration, will be overridden by SpeechBrain's setup if run via its entry points.
-# However, for direct script execution, this is useful.
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s - %(module)s.%(funcName)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
 
-# Define custom Brain class for SSL
 class SSLBrain(sb.Brain):
+    def __init__(self, modules=None, opt_class=None, hparams=None, run_opts=None, checkpointer=None):
+        super().__init__(modules, opt_class, hparams, run_opts, checkpointer)
+        
+        # Dynamically set input size for ssl_head if not already set
+        if hasattr(self.modules, 'wav2vec2_model') and hasattr(self.modules, 'ssl_head'):
+            try:
+                # This assumes wav2vec2_model is the SpeechBrain HuggingFaceWav2Vec2 lobe
+                # and its underlying model is a standard HuggingFace PreTrainedModel with a config.
+                if hasattr(self.modules.wav2vec2_model, 'model') and \
+                   hasattr(self.modules.wav2vec2_model.model, 'config') and \
+                   hasattr(self.modules.wav2vec2_model.model.config, 'hidden_size'):
+                    
+                    encoder_out_dim = self.modules.wav2vec2_model.model.config.hidden_size
+                    
+                    # Check if ssl_head is a SpeechBrain NNET Linear or similar and if input_size needs setting
+                    current_ssl_head = self.modules.ssl_head
+                    if isinstance(current_ssl_head, sb.nnet.linear.Linear):
+                        # SpeechBrain's Linear module stores layers in a Sequential; first layer is the actual nn.Linear
+                        if hasattr(current_ssl_head, 'layers') and len(current_ssl_head.layers) > 0 and \
+                           isinstance(current_ssl_head.layers[0], torch.nn.Linear):
+                            actual_linear_layer = current_ssl_head.layers[0]
+                            
+                            if actual_linear_layer.in_features != encoder_out_dim :
+                                logger.info(f"Dynamically re-initializing ssl_head. Original in_features: {actual_linear_layer.in_features}, New (encoder_out_dim): {encoder_out_dim}")
+                                self.modules.ssl_head = sb.nnet.linear.Linear(
+                                    input_size=encoder_out_dim, 
+                                    n_neurons=self.hparams.num_ssl_clusters, # From hparams
+                                    bias=True # Match YAML
+                                ).to(self.device)
+                            else:
+                                logger.info(f"SSL_Head input size ({actual_linear_layer.in_features}) already matches Wav2Vec2 output size ({encoder_out_dim}). No re-initialization needed.")
+                        else: # Fallback if structure is different, or if input_size was meant to be set by SpeechBrain from YAML
+                             logger.warning("Could not verify/set ssl_head input size dynamically. Assuming it's correctly set if non-zero.")
+
+                else:
+                    logger.warning("Could not dynamically determine wav2vec2_model output size for ssl_head. Ensure input_size is correctly set in YAML or manually.")
+            except Exception as e:
+                logger.warning(f"Error dynamically setting/checking ssl_head input size: {e}. Ensure it's correctly defined in hparams.")
+        
+        # Initialize learnable mask embedding for HuBERT-style masking
+        # This parameter will be part of the model and moved to device by Brain
+        if hasattr(self.modules, 'wav2vec2_model') and hasattr(self.modules.wav2vec2_model, 'model'):
+             feat_dim = self.modules.wav2vec2_model.model.config.hidden_size
+             self.mask_embedding = torch.nn.Parameter(torch.FloatTensor(feat_dim).uniform_())
+             logger.info(f"Initialized learnable mask embedding of shape: {self.mask_embedding.shape}")
+        else:
+            # This case should ideally not happen if modules are correctly defined in YAML and loaded.
+            logger.error("wav2vec2_model not available for determining feature dimension for mask_embedding. Masking will fail.")
+            # Set a placeholder to prevent AttributeError, but it won't be correct.
+            self.mask_embedding = torch.nn.Parameter(torch.FloatTensor(1).uniform_()) # Placeholder
+
+    def mask_acoustic_features(self, features, wav_lens):
+        """
+        Applies HuBERT-style masking to acoustic features (output of Wav2Vec2 encoder).
+        Features: (B, T, C). wav_lens: (B,) relative lengths (0-1).
+        Returns: masked_features (B, T, C) and boolean_mask (B, T).
+        """
+        batch_size, seq_len, _ = features.shape
+        
+        boolean_mask = torch.zeros((batch_size, seq_len), dtype=torch.bool, device=features.device)
+        masked_features = features.clone()
+
+        for i in range(batch_size):
+            # Actual number of frames for this item based on relative wav_lens
+            # This assumes feature sequence length is proportional to audio length,
+            # which is true for Wav2Vec2 like models.
+            current_num_frames = int(torch.round(wav_lens[i] * seq_len))
+            if current_num_frames == 0:
+                continue
+
+            # Number of frames to mask based on mask_prob
+            num_frames_to_mask = int(current_num_frames * self.hparams.mask_prob)
+            
+            # Adjust if less than mask_min_spans * mask_length
+            min_frames_for_min_spans = self.hparams.mask_min_spans * self.hparams.mask_length
+            if num_frames_to_mask < min_frames_for_min_spans and current_num_frames >= min_frames_for_min_spans :
+                num_frames_to_mask = min_frames_for_min_spans
+            
+            num_frames_to_mask = min(num_frames_to_mask, current_num_frames) # Cap at available frames
+
+            masked_indices_count = 0
+            # Iterate to select mask spans. This is a simplified approach.
+            # fairseq's HuBERT has a more complex geometric distribution based span selection.
+            attempts = 0 # To prevent infinite loops if masking is difficult
+            while masked_indices_count < num_frames_to_mask and attempts < current_num_frames * 5:
+                span_start = torch.randint(0, current_num_frames - self.hparams.mask_length + 1, (1,)).item()
+                
+                # Check if this span would make us exceed num_frames_to_mask too much
+                # This is a simple way to try and get close to the target number of masked frames
+                if masked_indices_count + self.hparams.mask_length > num_frames_to_mask * 1.5 and masked_indices_count > 0: # Allow some overshoot
+                    attempts += 1
+                    continue 
+                
+                for j in range(self.hparams.mask_length):
+                    idx_to_mask = span_start + j
+                    if idx_to_mask < current_num_frames: # Ensure we are within actual frames
+                        if not boolean_mask[i, idx_to_mask]: # If not already masked
+                            boolean_mask[i, idx_to_mask] = True
+                            masked_features[i, idx_to_mask, :] = self.mask_embedding
+                            masked_indices_count += 1
+                    if masked_indices_count >= num_frames_to_mask: break
+                if masked_indices_count >= num_frames_to_mask: break
+                attempts += 1
+            
+            if num_frames_to_mask > 0 and masked_indices_count == 0:
+                logger.debug(f"Item {i}: Could not mask any frames. Requested: {num_frames_to_mask}, Actual frames: {current_num_frames}")
+            elif masked_indices_count < num_frames_to_mask:
+                logger.debug(f"Item {i}: Masked {masked_indices_count}/{num_frames_to_mask} frames. Actual frames: {current_num_frames}")
+
+        return masked_features, boolean_mask
+
+
     def compute_forward(self, batch, stage):
-        """Forward computations from the waveform batches to the output probabilities."""
         batch = batch.to(self.device)
-        wavs, wav_lens = batch.sig # sig is a common SpeechBrain key for audio signals
+        wavs, wav_lens = batch.sig
+        # K-means targets are padded by PaddedBatch if lengths vary
+        kmeans_targets_padded, kmeans_target_lens_abs = batch.kmeans_targets 
         
-        # Get features from Wav2Vec2 model
-        # The HuggingFaceWav2Vec2 lobe from SpeechBrain can act as an encoder
-        features = self.modules.wav2vec2_model(wavs, wav_lens) # (B, T, C)
+        # Get features from Wav2Vec2 model (Encoder output)
+        encoder_output_features = self.modules.wav2vec2_model(wavs, wav_lens) # (B, T, D_encoder)
 
-        # SSL Objective: Masked Feature Prediction (conceptual)
-        # This part is highly dependent on the chosen SSL strategy and SpeechBrain's tools.
-        # 1. Create masked version of features (or input wavs if preferred for some strategies)
-        #    SpeechBrain has utilities for SpecAugment, which can be a form of masking.
-        #    Or, implement custom masking.
-        #    `self.hparams.masking_prob`, `self.hparams.mask_length` could be in YAML.
-        #
-        #    Example (very simplified masking):
-        #    masked_features, mask_indices = self.mask_features(features, wav_lens)
-        #
-        # 2. If the model has a prediction head for masked features (like BERT for MLM),
-        #    pass masked_features through it.
-        #    If not, the 'features' themselves (from unmasked input) might be the target
-        #    for a reconstruction loss from the masked input passed through encoder again.
-        #
-        # For now, let's assume 'features' are what we want to predict/reconstruct or use for contrastive loss.
-        # The actual SSL mechanism needs to be detailed here based on chosen strategy.
-        # This might involve projecting features, quantizing (for Wav2Vec2 original objective), etc.
+        # Apply HuBERT-style masking to these encoder output features
+        # The mask_acoustic_features function uses wav_lens (relative audio lengths)
+        # to determine the number of feature frames for each item in the batch.
+        masked_input_for_head, time_mask_indices = self.mask_acoustic_features(encoder_output_features, wav_lens)
         
-        # For this skeleton, let's just return the features.
-        # The actual SSL output would be predictions for masked parts or contrastive elements.
-        return features 
+        # Pass the masked encoder output through the SSL prediction head
+        predictions_logits = self.modules.ssl_head(masked_input_for_head) # (B, T, num_clusters)
+        
+        return predictions_logits, time_mask_indices, kmeans_targets_padded, kmeans_target_lens_abs
 
-    # def mask_features(self, features, wav_lens):
-    #     # Placeholder for actual feature masking logic
-    #     # This would use parameters from hparams.yaml
-    #     # For example, randomly mask some time steps or feature dimensions
-    #     # Returns: masked_features, true_masked_values (or indices)
-    #     logger.warning("Feature masking not fully implemented in this skeleton.")
-    #     return features, None 
+    def compute_objectives(self, forward_outputs, batch, stage):
+        predictions_logits, time_mask_indices, kmeans_targets_padded, kmeans_target_lens_abs = forward_outputs
+        
+        kmeans_targets_padded = kmeans_targets_padded.to(predictions_logits.device)
 
-    def compute_objectives(self, predictions, batch, stage):
-        """Computes the loss given predictions and targets."""
-        # This is where the SSL loss is calculated.
-        # E.g., if 'predictions' are the output of the model trying to reconstruct masked features,
-        # and 'targets' are the true features of the masked parts.
-        #
-        # For Wav2Vec2 original SSL:
-        #  - Contrastive loss between context representations (from masked regions) and quantized true features.
-        #  - Diversity loss for codebook usage.
-        #
-        # For a HuBERT-like masked prediction SSL:
-        #  - Cross-entropy loss between predicted cluster IDs and true cluster IDs for masked frames.
-        #
-        # This skeleton needs a concrete SSL loss function.
-        # For now, a dummy loss:
-        # loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-        
-        # A more plausible placeholder if predictions are features and we want to reconstruct them
-        # from a hypothetical masked input (this assumes 'predictions' are from a masked input
-        # and 'targets' are the original features).
-        # This is a very simplified reconstruction loss idea.
-        
-        # Actual SSL loss logic is critical and complex.
-        # For now, let's assume 'predictions' are the final output we are working with.
-        # We need a target. If we had 'masked_indices' and 'original_features' from batch:
-        # loss = self.hparams.compute_cost(predictions[masked_indices], original_features[masked_indices])
+        # Align target sequence length with prediction sequence length if necessary
+        pred_seq_len = predictions_logits.size(1)
+        target_seq_len = kmeans_targets_padded.size(1)
 
-        # This part is highly dependent on what compute_forward returns and what the SSL strategy is.
-        # If compute_forward just returns features, we can't compute a loss without more structure.
-        # This highlights that the YAML and Brain class need to be tightly coupled
-        # with a chosen SSL strategy (e.g. using a specific SpeechBrain SSL model/template).
-        
-        # Let's create a placeholder loss that just encourages activations to be small
-        # This is NOT a real SSL objective but makes the script runnable.
-        loss = torch.mean(predictions.pow(2)) 
+        if pred_seq_len != target_seq_len:
+            logger.debug(
+                f"Aligning sequence lengths: Pred_len={pred_seq_len}, Target_len={target_seq_len}. Truncating to min length."
+            )
+            min_len = min(pred_seq_len, target_seq_len)
+            predictions_logits = predictions_logits[:, :min_len, :]
+            kmeans_targets_padded = kmeans_targets_padded[:, :min_len]
+            time_mask_indices = time_mask_indices[:, :min_len]
+            # We also need to adjust kmeans_target_lens_abs if we truncate targets
+            # This is important if targets had padding that's now removed by truncation.
+            # For simplicity, assume that if lengths differ, it's minor and related to conv layers,
+            # and that kmeans_target_lens_abs still broadly applies to the (now potentially truncated) targets.
+            # A more robust solution would re-calculate target_lens if truncation happens.
+            # For now, we assume the mask (time_mask_indices) will correctly select valid regions.
+
+        # Select only the logits and targets at masked positions
+        masked_logits = predictions_logits[time_mask_indices] 
+        masked_targets = kmeans_targets_padded[time_mask_indices]
+
+        if masked_logits.nelement() == 0 or masked_targets.nelement() == 0:
+            logger.warning("No masked frames for loss computation in this batch. Returning zero loss.")
+            return torch.tensor(0.0, device=self.device, requires_grad=True)
+
+        # Compute Cross-Entropy loss
+        # masked_logits shape: (TotalMaskedFrames, NumClusters)
+        # masked_targets shape: (TotalMaskedFrames)
+        loss = F.cross_entropy(
+            masked_logits.reshape(-1, self.hparams.num_ssl_clusters), 
+            masked_targets.reshape(-1),
+            # ignore_index: K-means IDs should all be valid (0 to N-1).
+            # If K-means target files could have padding values (e.g., -100), specify ignore_index.
+            # Assuming for now that loaded K-means targets are only valid IDs for masked positions.
+        )
         
         if stage != sb.Stage.TRAIN:
-            # Log additional metrics if needed for validation stage
-            # self.val_metrics.append(loss.item()) # Example
-            pass
+            # Optional: calculate accuracy for monitoring
+            with torch.no_grad():
+                predicted_ids = torch.argmax(masked_logits, dim=-1)
+                correct_predictions = (predicted_ids == masked_targets).sum().item()
+                total_masked = masked_targets.numel()
+                if total_masked > 0 :
+                    self.last_batch_accuracy = correct_predictions / total_masked
+                else:
+                    self.last_batch_accuracy = 0.0 # Or some other indicator
         return loss
 
     def on_stage_start(self, stage, epoch):
-        """Gets called at the beginning of each epoch."""
         if stage != sb.Stage.TRAIN:
-            # self.val_metrics = [] # Example: Initialize metrics list for validation
-            pass
+            self.accuracies_this_epoch = [] # Store accuracies for averaging
 
     def on_stage_end(self, stage, stage_loss, epoch):
-        """Gets called at the end of an epoch."""
+        stage_name = stage.name.capitalize()
         if stage == sb.Stage.TRAIN:
-            self.train_loss = stage_loss
+            self.train_loss = stage_loss # sb.Brain tracks this automatically
             logger.info(f"Epoch {epoch}: Training Loss = {stage_loss:.4f}")
-        if stage == sb.Stage.VALID:
-            # avg_val_loss = sum(self.val_metrics) / len(self.val_metrics) if self.val_metrics else 0
-            # logger.info(f"Epoch {epoch}: Validation Loss = {avg_val_loss:.4f}")
-            logger.info(f"Epoch {epoch}: Validation Loss (from stage_loss) = {stage_loss:.4f}") # Using stage_loss directly
-        if stage == sb.Stage.TEST:
-            logger.info(f"Epoch {epoch}: Test Loss = {stage_loss:.4f}")
+        else: # Validation or Test
+            logger.info(f"Epoch {epoch}: {stage_name} Loss = {stage_loss:.4f}")
+            if hasattr(self, 'accuracies_this_epoch') and self.accuracies_this_epoch:
+                avg_accuracy = sum(self.accuracies_this_epoch) / len(self.accuracies_this_epoch)
+                logger.info(f"Epoch {epoch}: {stage_name} Average Accuracy = {avg_accuracy:.3f}")
+            elif hasattr(self, 'last_batch_accuracy'): # Log last batch accuracy if list is empty (e.g. only one batch for val)
+                 logger.info(f"Epoch {epoch}: {stage_name} Last Batch Accuracy = {self.last_batch_accuracy:.3f}")
 
 
 def dataio_prepare(hparams):
-    """This function prepares the datasets to be used in the brain class.
-    It also defines the data processing pipeline through user-defined functions."""
+    logger.info("Preparing datasets for HuBERT-style SSL training...")
     
-    logger.info("Preparing datasets...")
+    # target_label_dir is resolved from hparams.
+    # In YAML: target_label_dir: !ref <output_folder>/kmeans_frame_labels/
+    # 'output_folder' is set in the main script part from CLI args before hparams are fully parsed for dataio.
+    # So, hparams["target_label_dir"] should be the correct, absolute path.
+    target_label_dir = hparams["target_label_dir"]
+    logger.info(f"K-means target labels will be loaded from: {target_label_dir}")
+    if not os.path.isdir(target_label_dir):
+        # This check might be too early if output_folder is created by SB's main loop later.
+        # However, for data loading, it should ideally exist.
+        logger.warning(f"K-means target label directory does not exist: {target_label_dir}. This will likely cause errors during data loading.")
 
     @sb.utils.data_pipeline.takes("wav")
     @sb.utils.data_pipeline.provides("sig")
-    def audio_pipeline(wav_path): # wav_path is the value from "wav" key in JSON
-        # Load audio
-        # SpeechBrain's PaddedBatch handles waveform length differences
+    def audio_pipeline(wav_path):
         try:
             sig = read_audio(wav_path)
             return sig
         except Exception as e:
-            logger.error(f"Error reading audio file {wav_path}: {e}")
-            # Return a dummy tensor or raise an error to be caught by dataset loader
-            # Returning a dummy tensor might hide issues, better to ensure data is clean.
-            # For now, let's assume pre-filtering or good data. If not, this will fail.
-            # Consider adding a check in the JSON preparation script that all files are loadable.
-            raise # Or return sb.signal.dummy_audio(0.1) or similar if recipe handles it.
+            logger.error(f"Error reading audio file {wav_path}: {e}", exc_info=True)
+            raise
 
-    # Define datasets
-    datasets = {}
+    @sb.utils.data_pipeline.takes("id") # Takes utterance ID from the JSON manifest key
+    @sb.utils.data_pipeline.provides("kmeans_targets")
+    def label_pipeline(utt_id):
+        label_filename = f"{utt_id}_kmeans_labels.npy"
+        label_path = os.path.join(target_label_dir, label_filename)
+        try:
+            targets = np.load(label_path)
+            return torch.from_numpy(targets).long()
+        except FileNotFoundError:
+            logger.error(f"K-means target file not found: {label_path}. This utterance will fail.")
+            raise FileNotFoundError(f"K-means target file not found: {label_path}")
+        except Exception as e:
+            logger.error(f"Error loading K-means target file {label_path}: {e}", exc_info=True)
+            raise
+
+    datasets_map = {}
     data_info = {
         "train": hparams["train_sb_manifest_file"],
-        # Add validation and test manifest if available from hparams
-        # "valid": hparams.get("valid_sb_manifest_file"),
-        # "test": hparams.get("test_sb_manifest_file"),
+        # "valid": hparams.get("valid_sb_manifest_file"), # Add if you have validation
     }
 
-    for dataset_name, manifest_file_key in data_info.items():
-        if manifest_file_key: # Check if key exists and has a value
-            manifest_file = hparams[manifest_file_key] if isinstance(manifest_file_key, str) and manifest_file_key in hparams else manifest_file_key
-            if not manifest_file: # If key was present but value was None/empty
-                logger.info(f"Manifest file for '{dataset_name}' not provided or empty in hparams. Skipping.")
+    for dataset_name, manifest_file_ref in data_info.items():
+        if manifest_file_ref: # YAML ref like !ref <data_folder>/...
+            actual_manifest_file = hparams[manifest_file_ref] if isinstance(manifest_file_ref, str) and manifest_file_ref in hparams else manifest_file_ref
+            if not actual_manifest_file: # If the reference resulted in None or empty
+                logger.info(f"Manifest file for '{dataset_name}' (from key '{manifest_file_ref}') is not defined or empty. Skipping.")
                 continue
-
-            logger.info(f"Loading '{dataset_name}' dataset from: {manifest_file}")
-            # Resolve data_folder correctly
-            # Assuming hparams["data_folder"] is relative to the hparams file location if not absolute
-            # Or, make it relative to CWD if that's more consistent for your setup.
-            # For now, SpeechBrain's default usually handles this if paths in JSON are $data_root/
-            # And `replacements` is used.
             
-            # Ensure the manifest file path is absolute or correctly relative
-            # If hparams_file is in 'speechbrain_ssl_training/', and manifest is '../data/manifest/'
-            # And data_folder is '../data/'
-            # SpeechBrain's default loader should handle replacements like:
-            # "wav": "$data_root/processed/segmented_audio/some_file.wav" -> "../data/processed/segmented_audio/some_file.wav"
-            # when data_folder = "../data"
-
-            datasets[dataset_name] = DynamicItemDataset.from_json(
-                json_path=manifest_file,
-                replacements={"data_root": hparams.get("data_folder")}, # Pass data_folder for $data_root replacement
-                dynamic_items=[audio_pipeline],
-                output_keys=["id", "sig"], # id is the utterance ID from JSON key
+            logger.info(f"Loading '{dataset_name}' dataset from: {actual_manifest_file}")
+            datasets_map[dataset_name] = DynamicItemDataset.from_json(
+                json_path=actual_manifest_file,
+                replacements={"data_root": hparams.get("data_folder")}, # data_folder from YAML
+                dynamic_items=[audio_pipeline, label_pipeline],
+                output_keys=["id", "sig", "kmeans_targets"], # Ensure "kmeans_targets" is here
             )
-            logger.info(f"'{dataset_name}' dataset loaded. Number of samples: {len(datasets[dataset_name])}")
+            logger.info(f"'{dataset_name}' dataset loaded. Number of samples: {len(datasets_map[dataset_name])}")
         else:
-            logger.info(f"Manifest file key for '{dataset_name}' not found or None in hparams. Skipping {dataset_name} dataset.")
+            logger.info(f"Manifest file reference for '{dataset_name}' not found or None. Skipping.")
 
-    
-    # Sort by duration if specified in hparams (optional)
-    # if hparams.get("sort_by_duration", False) and "train" in datasets:
-    #    logger.info("Sorting train dataset by duration (descending).")
-    #    datasets["train"] = datasets["train"].filtered_sorted(sort_key="duration", reverse=True)
+    if not datasets_map or "train" not in datasets_map:
+        raise ValueError("Training data could not be loaded. Check manifest paths and data_folder in hparams.")
 
-    if not datasets or "train" not in datasets:
-        raise ValueError("Training data could not be loaded. Please check 'train_sb_manifest_file' and 'data_folder' in hparams.")
+    return datasets_map
 
-    return datasets
 
-# Main function for training
 if __name__ == "__main__":
-    # Command-line arguments
-    parser = argparse.ArgumentParser(description="SpeechBrain SSL Model Training")
-    parser.add_argument(
-        "--hparams_file",
-        type=str,
-        required=True,
-        help="Path to the hyperparameter YAML file (e.g., hparams_ssl.yaml).",
-    )
-    parser.add_argument(
-        "--output_folder",
-        type=str,
-        required=True,
-        help="Path to the folder where checkpoints and logs will be stored.",
-    )
-    parser.add_argument(
-        "--data_folder", # This will override data_folder in YAML if provided
-        type=str,
-        help="Path to the main data directory (e.g., ../data/). Overrides 'data_folder' in hparams if specified.",
-    )
-    # Add common CLI overrides for hparams
-    parser.add_argument("--number_of_epochs", type=int, help="Override number of epochs from hparams.")
-    parser.add_argument("--batch_size", type=int, help="Override batch size from hparams.")
-    parser.add_argument("--lr_adam", type=float, help="Override Adam learning rate from hparams.")
-    parser.add_argument("--lr_wav2vec2", type=float, help="Override Wav2Vec2 learning rate from hparams.")
-    parser.add_argument("--device", type=str, help="Specify device (e.g., 'cuda', 'mps', 'cpu'). Overrides auto-detection.")
-
+    parser = argparse.ArgumentParser(description="SpeechBrain HuBERT-style SSL Model Training")
+    parser.add_argument("--hparams_file", type=str, required=True, help="Path to hparams YAML file.")
+    parser.add_argument("--output_folder", type=str, required=True, help="Folder for checkpoints and logs.")
+    parser.add_argument("--data_folder", type=str, help="Path to main data directory (overrides hparams).")
+    parser.add_argument("--number_of_epochs", type=int, help="Override number of epochs.")
+    parser.add_argument("--batch_size", type=int, help="Override batch size.")
+    parser.add_argument("--device", type=str, help="Specify device (e.g., 'cuda', 'mps', 'cpu').")
 
     args = parser.parse_args()
-
-    # Load hyperparameters file with command-line overrides
-    # SpeechBrain's `run_on_main` decorator handles this in typical recipes.
-    # For direct script execution, we do it manually.
     hparams_file_path = args.hparams_file
     
-    # Convert CLI args to a dictionary for overrides, removing None values
-    cli_overrides = {k: v for k, v in vars(args).items() if v is not None and k not in ["hparams_file"]} # output_folder is handled by create_experiment_directory
+    # CLI overrides dictionary
+    cli_overrides = {k: v for k, v in vars(args).items() if v is not None and k not in ["hparams_file"]}
+    # Ensure output_folder from CLI is part of overrides if provided, as it's crucial for !ref resolution
+    if args.output_folder:
+        cli_overrides["output_folder"] = args.output_folder
 
-    # Prepend `../` to paths in hparams if they are relative to the hparams file itself
-    # This makes paths like `../data` work correctly if the script is run from `speechbrain_ssl_training`
-    # and the hparams file is also there.
-    # However, SpeechBrain's `load_extended_yaml` with `sb.create_experiment_directory` usually handles this.
-    # For now, assume paths in YAML are relative to hparams file or absolute.
-    # `data_folder` in YAML is critical. If it's `../data`, it should point from hparams location.
 
     with open(hparams_file_path) as fin:
         hparams = sb.load_extended_yaml(fin, overrides=cli_overrides)
-
-    # Ensure output folder exists (SpeechBrain utility)
-    # output_folder is taken from args.output_folder, then from hparams if not in args
-    # The create_experiment_directory will use args.output_folder if provided.
-    # It will also save the hparams file there.
+    
+    # Important: Ensure hparams['output_folder'] is set to the CLI arg *before* dataio_prepare,
+    # as target_label_dir might use !ref <output_folder>.
+    # sb.create_experiment_directory does this, but if we resolve paths before, ensure it's set.
+    # The `load_extended_yaml` with `overrides` should handle this if `output_folder` is a !ref in YAML.
+    # If `output_folder` itself is not a !ref but other things are, like `target_label_dir: !ref <output_folder>/...`,
+    # then `output_folder` must be correctly defined in `hparams` when `dataio_prepare` is called.
+    # The CLI override for output_folder is the primary way.
+    
     sb.create_experiment_directory(
-        experiment_directory=args.output_folder, # This is where output_folder from args is used
-        hyperparams_to_save=hparams_file_path, # Save the original hparams file
-        overrides=cli_overrides, # Log overrides
+        experiment_directory=args.output_folder, # This is the definitive output_folder
+        hyperparams_to_save=hparams_file_path,
+        overrides=cli_overrides, # This will also log the final overrides applied
     )
     
-    # The `data_folder` in hparams needs to be correctly set up relative to where the script expects it.
-    # If `data_folder` in YAML is `../data`, and `hparams_ssl.yaml` is in `speechbrain_ssl_training`,
-    # this means `data_folder` resolves to `runyoro_speech_ai/data`.
-    # The paths in the manifest (e.g., `sb_ssl_manifest.json`) should then use `$data_root`
-    # which will be replaced by this `data_folder`.
-    # Example manifest path in YAML: `!ref <data_folder>/manifest/sb_ssl_manifest.json`
+    # Update hparams with the definitive output_folder for dataio_prepare, if it wasn't already set via overrides.
+    # This ensures that if `target_label_dir` relies on `output_folder` via `!ref`, it resolves correctly.
+    hparams["output_folder"] = args.output_folder
 
-    # Prepare datasets
+
     datasets = dataio_prepare(hparams)
 
-    # Determine device
-    run_opts = {"device": sb.core.auto_device()} # Default auto-detection
-    if args.device: # If user specified device via CLI
+    run_opts = {"device": sb.core.auto_device()}
+    if args.device:
         run_opts["device"] = args.device
     logger.info(f"Running on device: {run_opts['device']}")
 
-
     # Initialize Brain object
+    # paramwise_optimizers can be used for differential learning rates if needed
+    # For example:
+    # if "paramwise_optimizers" not in hparams:
+    #    hparams["paramwise_optimizers"] = {
+    #        "wav2vec2_model": {"optimizer": torch.optim.Adam, "lr": hparams.get("lr_wav2vec2", hparams["lr_adam"])},
+    #        "ssl_head": {"optimizer": torch.optim.Adam, "lr": hparams["lr_adam"]}
+    #    }
+    # And then pass paramwise_optimizers=hparams["paramwise_optimizers"] to Brain
+    
     ssl_brain = SSLBrain(
         modules=hparams["modules"],
-        opt_class=lambda params: getattr(torch.optim, hparams["optimizer"].capitalize())(params, lr=hparams["lr_adam"]),
+        opt_class=lambda params: getattr(torch.optim, hparams["optimizer"].capitalize())(
+            params, lr=hparams["lr_adam"] 
+        ),
         hparams=hparams,
         run_opts=run_opts, 
         checkpointer=hparams["checkpointer"],
     )
 
-    # Start training
-    # SpeechBrain's PaddedBatch is used by default for DynamicItemDataset
-    # Dataloader options can be passed via train_loader_kwargs in fit()
     train_dataloader_opts = hparams.get("train_dataloader_opts", {})
-    if "batch_size" not in train_dataloader_opts: # Ensure batch_size from hparams is used
+    if "batch_size" not in train_dataloader_opts: # Ensure batch_size from hparams (possibly overridden by CLI) is used
         train_dataloader_opts["batch_size"] = hparams["batch_size"]
-    if "num_workers" not in train_dataloader_opts and "num_workers" in hparams: # For SpeechBrain >=0.5.13
-         train_dataloader_opts["num_workers"] = hparams.get("num_workers", 0)
-
-
-    logger.info(f"Starting training with effective batch size: {hparams['batch_size']} and grad_accum: {hparams['grad_accumulation_factor']}")
     
-    # Ensure the 'epoch_counter' is available in hparams or use a default starting epoch.
-    # SpeechBrain's `Brain.fit` expects an iterable of epochs or an epoch counter.
-    # Here, we use the `EpochCounter` from hparams, typically initialized to 0 or loaded from a checkpoint.
-    # If `epoch_counter` is not in hparams, create one.
+    # num_workers can be specified in YAML under train_dataloader_opts or globally
+    if "num_workers" not in train_dataloader_opts and "num_workers" in hparams:
+         train_dataloader_opts["num_workers"] = hparams.get("num_workers", 0)
+    elif "num_workers" not in train_dataloader_opts and "dataloader_num_workers" in hparams: # backward compat for older hparam name
+         train_dataloader_opts["num_workers"] = hparams.get("dataloader_num_workers", 0)
+
+
+    logger.info(f"Starting training with effective batch size: {hparams['batch_size']} * {hparams['grad_accumulation_factor']}")
+    
     if "epoch_counter" not in hparams:
         hparams["epoch_counter"] = sb.utils.epoch_loop.EpochCounter(limit=hparams["number_of_epochs"])
-
 
     ssl_brain.fit(
         epoch_counter=hparams["epoch_counter"], 
         train_set=datasets["train"],
         train_loader_kwargs=train_dataloader_opts,
-        # valid_loader_kwargs=hparams.get("valid_dataloader_opts",{}), # If validation data is present
-        # valid_set=datasets.get("valid") 
+        # valid_set=datasets.get("valid"), # Uncomment if validation is added
+        # valid_loader_kwargs=hparams.get("valid_dataloader_opts", {})
     )
     
-    # Save final model explicitly (optional, as checkpointer might do this)
-    # This method is useful if you want to save with a specific name like "final.pt"
-    # ssl_brain.save_checkpoint(name="final_model") # This saves the *entire* training state.
-    # To save just model weights, you might need:
-    # torch.save(ssl_brain.modules.state_dict(), os.path.join(args.output_folder, "final_model_weights.pt"))
-
-    logger.info(f"SSL training with SpeechBrain finished. Checkpoints and logs in: {args.output_folder}")
+    logger.info(f"HuBERT-style SSL training finished. Checkpoints and logs in: {args.output_folder}")
