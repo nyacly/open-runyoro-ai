@@ -40,38 +40,45 @@ This project follows a structured layout to keep code, data, and documentation o
         -   `data/processed/`: Data that has undergone some form of processing.
             -   `data/processed/converted_audio_16khz_mono/`: (Default) Stores audio files converted to a consistent format (16kHz mono WAV).
             -   `data/processed/segmented_audio/`: (Default) Contains smaller audio segments derived from the processed audio, ready for manifest creation.
-            -   `data/processed/ssl_dataset/`: Stores the Hugging Face `Dataset` specifically prepared for Self-Supervised Learning (SSL) model training.
+            -   `data/processed/ssl_dataset/`: (Legacy Transformers) Stores the Hugging Face `Dataset` specifically prepared for Self-Supervised Learning (SSL) model training with the old `train_ssl.py`.
             -   `data/processed/asr_dataset/`: (Future use) Will store datasets prepared for Automatic Speech Recognition (ASR) fine-tuning.
         -   `data/manifest/`: Holds manifest files (typically JSONL format) that list audio file paths and their metadata (like duration).
-            -   `data/manifest/audio_manifest.jsonl`: (Default) Manifest generated from all segmented audio.
-    -   **`data_ingestion/`**: Contains Python scripts responsible for data acquisition and initial preprocessing (downloading, format conversion, segmentation).
+            -   `data/manifest/audio_manifest.jsonl`: (Default) Manifest generated from all segmented audio by `main_ingest.py`.
+            -   `data/manifest/sb_ssl_manifest_for_kmeans.json`: (Example) SpeechBrain-formatted JSON manifest for K-means target generation.
+            -   `data/manifest/sb_ssl_manifest.json`: (Example) SpeechBrain-formatted JSON manifest used for actual training (might be same as above).
+    -   **`data_ingestion/`**: Contains Python scripts responsible for data acquisition and initial preprocessing.
         -   `main_ingest.py`: The main orchestrator script for the data ingestion pipeline.
         -   `download_youtube.py`, `process_local_files.py`, `preprocess_audio.py`: Core component scripts for ingestion.
-    -   **`ssl_training/`**: Scripts and documentation related to Self-Supervised Learning (SSL) model pre-training.
-        -   `prepare_ssl_data.py`: Prepares the manifest data for SSL training.
-        -   `train_ssl.py`: Script for running the SSL training.
-        -   `README.md`: Documentation specific to SSL training.
+    -   **`ssl_training/`**: (Legacy Transformers) Scripts and documentation related to the older Hugging Face Transformers SSL model pre-training.
+        -   `prepare_ssl_data.py`: (Legacy) Prepares data for the Transformers `train_ssl.py`.
+        -   `train_ssl.py`: (Legacy) Script for running SSL training with Transformers.
+        -   `README.md`: (Legacy) Documentation specific to Transformers SSL training.
+    -   **`speechbrain_ssl_training/`**: Scripts and documentation for SSL model pre-training using SpeechBrain.
+        -   `prepare_sb_ssl_data.py`: Converts general manifest to SpeechBrain JSON format.
+        -   `generate_kmeans_targets.py`: Generates K-means targets for HuBERT-style SSL.
+        -   `train_sb_ssl.py`: Script for running SSL training with SpeechBrain.
+        -   `hparams_ssl.yaml`: Hyperparameter file for SpeechBrain SSL training.
+        -   `README.md`: Documentation specific to SpeechBrain SSL training.
     -   **`asr_finetuning/`**: (Future use) Will contain scripts and resources for fine-tuning models for Automatic Speech Recognition (ASR).
     -   **`inference/`**: (Future use) Will house scripts for using trained models to perform transcription.
     -   **`models/`**: Default directory for storing trained model checkpoints and related artifacts.
-        -   `models/ssl/`: Specifically for SSL pre-trained models.
+        -   `models/ssl/`: (Legacy Transformers) For SSL pre-trained models from `ssl_training/`.
+        -   `models/speechbrain_ssl/`: For SSL pre-trained models using SpeechBrain.
         *   `models/asr/`: (Future use) For ASR fine-tuned models.
-    -   **`scripts/`**: Utility and helper scripts (e.g., `check_mps.py` for verifying Apple Silicon GPU support, `test_run_ssl.sh` for test runs, `generate_manifest.py`).
-    -   **`docs/`**: Detailed documentation for specific parts of the pipeline (e.g., `data_ingestion.md`, setup guides).
-    -   **`tests/`**: Contains unit tests and integration tests for the project's codebase.
-        -   `tests/fixtures/`: (If used, though current tests generate fixtures on-the-fly) Sample data files for testing.
-        -   `test_data_ingestion.py`: Example test file.
-    -   **`.github/`**: (If using GitHub) Workflows for GitHub Actions (e.g., CI/CD).
-    -   **`runyoro_env/` or `.venv/`**: (If following local setup guide) Python virtual environment directory (should be in `.gitignore`).
-    -   **`.gitignore`**: Specifies intentionally untracked files that Git should ignore (project-level and potentially a root-level one).
-    -   **`README.md`**: The main landing page for the project, providing an overview and guidance (this file).
+    -   **`scripts/`**: Utility and helper scripts.
+    -   **`docs/`**: Detailed documentation.
+    -   **`tests/`**: Unit and integration tests.
+    -   **`.github/`**: (If using GitHub) Workflows for GitHub Actions.
+    -   **`runyoro_env/` or `.venv/`**: Python virtual environment directory.
+    -   **`.gitignore`**: Specifies intentionally untracked files.
+    -   **`README.md`**: This file.
     -   **`requirements.txt`**: (Goal) Lists Python package dependencies (creation pending resolution of environment limitations).
 
-## Quick Start: Training an SSL Model from YouTube Links
+## Quick Start: Training an SSL Model (HuBERT-style with SpeechBrain) from YouTube Links
 
-This guide provides a step-by-step walkthrough to download audio from YouTube, process it, and start Self-Supervised Learning (SSL) pre-training on your local machine (e.g., a MacBook Pro M4).
+This guide provides a step-by-step walkthrough to download audio from YouTube, process it, and start Self-Supervised Learning (SSL) pre-training using SpeechBrain on your local machine (e.g., a MacBook Pro M4).
 
-*(For more in-depth explanations of each stage, please refer to the documentation in the `docs/` and specific pipeline directories like `ssl_training/`.)*
+*(For more in-depth explanations of each stage, please refer to the documentation in `docs/` and the `speechbrain_ssl_training/README.md`.)*
 
 ### Step 1: Environment Setup
 
@@ -79,7 +86,7 @@ Before you begin, ensure your environment is correctly set up:
 
 1.  **Clone the Repository:** If you haven't already, clone this project to your local machine.
 2.  **Python Virtual Environment:**
-    *   Navigate to the project root in your terminal.
+    *   Navigate to the project root (`runyoro_speech_ai/`) in your terminal.
     *   Create and activate a Python virtual environment:
         ```bash
         python3 -m venv runyoro_env
@@ -87,8 +94,17 @@ Before you begin, ensure your environment is correctly set up:
         ```
 3.  **Install Dependencies:**
     *   **`ffmpeg`**: Install `ffmpeg` (if not already present). On macOS with Homebrew: `brew install ffmpeg`
-    *   **Python Packages**: Install required Python libraries. While a `requirements.txt` is the goal, you may need to install them manually based on the lists in `docs/data_ingestion.md` and `ssl_training/README.md`. Key packages include `torch`, `torchaudio`, `transformers`, `datasets`, `accelerate`, `yt-dlp`, `pydub`.
-        *   Ensure your PyTorch installation supports MPS for Apple Silicon. See [PyTorch Get Started](https://pytorch.org/get-started/locally/).
+    *   **Python Packages**: Install required Python libraries. Key packages include:
+        *   `speechbrain`
+        *   `torch` (ensure MPS support for Apple Silicon, see [PyTorch Get Started](https://pytorch.org/get-started/locally/))
+        *   `torchaudio`
+        *   `numpy`
+        *   `scikit-learn` (for K-means)
+        *   `joblib` (for K-means model saving/loading)
+        *   `pyyaml` (for hparams)
+        *   `yt-dlp`, `pydub` (for data ingestion)
+        *   `transformers`, `datasets`, `accelerate` (if also using the legacy Hugging Face SSL pipeline)
+        *(Refer to `speechbrain_ssl_training/README.md` and `docs/data_ingestion.md` for more context on dependencies. A consolidated `requirements.txt` is a future goal.)*
 4.  **Verify MPS (for Apple Silicon users):**
     ```bash
     python ./scripts/check_mps.py
@@ -106,11 +122,11 @@ Before you begin, ensure your environment is correctly set up:
     https://www.youtube.com/watch?v=xxxxxxxxx_02
     ```
 
-### Step 3: Run Data Ingestion and Preprocessing
+### Step 3: Run Data Ingestion and Initial Preprocessing
 
-This step uses the `main_ingest.py` script to download audio from your list of YouTube links, convert it to the required audio format (16kHz mono WAV), segment it into smaller clips, and generate a manifest file.
+This step uses the `main_ingest.py` script to download audio from your list of YouTube links, convert it to the required audio format (16kHz mono WAV), segment it into smaller clips, and generate an initial manifest file (`audio_manifest.jsonl`).
 
-Execute the following command from the project root directory:
+Execute the following command from the project root directory (`runyoro_speech_ai/`):
 
 ```bash
 python ./data_ingestion/main_ingest.py \
@@ -119,81 +135,89 @@ python ./data_ingestion/main_ingest.py \
 ```
 
 -   **Output:**
-    -   Downloaded audio will be in `data/raw/youtube_downloads/`.
-    -   Processed 16kHz mono WAVs in `data/processed/converted_audio_16khz_mono/`.
-    -   Segmented audio clips in `data/processed/segmented_audio/`.
-    -   A manifest file named `audio_manifest.jsonl` will be created in `data/manifest/`. This file lists all segmented audio clips and their durations, which is crucial for the next steps.
+    -   Downloaded audio: `data/raw/youtube_downloads/`.
+    -   Converted 16kHz mono WAVs: `data/processed/converted_audio_16khz_mono/`.
+    -   Segmented audio clips: `data/processed/segmented_audio/`.
+    -   Initial JSONL manifest: `data/manifest/audio_manifest.jsonl`.
 
-### Step 4: Prepare Dataset for SSL Training
+### Step 4: Prepare Data for SpeechBrain SSL Training
 
-This step takes the `audio_manifest.jsonl` and prepares the audio data specifically for the SSL model. This involves loading the audio segments and applying the feature extraction process defined by the pre-trained SSL model.
+This involves two sub-steps:
 
-Execute the `prepare_ssl_data.py` script:
+#### Step 4a: Convert Manifest for SpeechBrain
 
+Convert the `audio_manifest.jsonl` (from Step 3) into a SpeechBrain-compatible JSON format.
+
+Execute the `prepare_sb_ssl_data.py` script (from project root):
 ```bash
-python ./ssl_training/prepare_ssl_data.py \
-    --manifest_path ./data/manifest/audio_manifest.jsonl \
-    --output_dir ./data/processed/ssl_dataset/ \
-    --model_name_or_path facebook/wav2vec2-xls-r-300m \
-    --max_duration_sec 15 \
-    --min_duration_sec 2
+python ./speechbrain_ssl_training/prepare_sb_ssl_data.py \
+    --input_manifest_jsonl ./data/manifest/audio_manifest.jsonl \
+    --output_sb_json ./data/manifest/sb_ssl_manifest_for_kmeans.json
 ```
-*Note: For faster processing, you can add `--num_workers <number_of_cpu_cores>` (e.g., `--num_workers 4`) to the command above.*
+-   **Output:** Creates `sb_ssl_manifest_for_kmeans.json` in `data/manifest/`.
 
--   **Output:** This will create a Hugging Face `Dataset` formatted for training, saved in the `./data/processed/ssl_dataset/` directory.
+#### Step 4b: Generate K-means Targets for HuBERT-style SSL
 
-### Step 5: Start SSL Model Pre-training
+Extract features from the audio (listed in `sb_ssl_manifest_for_kmeans.json`), train a K-means model, and save frame-level cluster labels. These labels are the targets for the HuBERT-style SSL model.
 
-Now you can begin the actual SSL pre-training. This process takes the base `facebook/wav2vec2-xls-r-300m` model and continues its training using your prepared Runyoro audio data. This helps the model adapt to the specific acoustic characteristics of Runyoro.
-
-Execute the `train_ssl.py` script:
-
+Execute the `generate_kmeans_targets.py` script (from project root):
 ```bash
-python ./ssl_training/train_ssl.py \
-    --processed_dataset_path ./data/processed/ssl_dataset/ \
-    --model_name_or_path facebook/wav2vec2-xls-r-300m \
-    --output_dir ./models/ssl/my_runyoro_ssl_model/ \
-    --num_train_epochs 10 \
-    --per_device_train_batch_size 2 \
-    --gradient_accumulation_steps 16 \
-    --learning_rate 5e-5 \
-    --warmup_steps 500 \
-    --logging_steps 10 \
-    --save_steps 500 \
-    --save_total_limit 3 \
-    --fp16 \
-    --seed 42
-```
-*Note: For faster data loading during training, you can add `--dataloader_num_workers <number_of_cpu_cores>` (e.g., `--dataloader_num_workers 4`) to the command above.*
+# Define where K-means artifacts will be saved; this path will be referenced in hparams.yaml
+KMEANS_EXPERIMENT_FOLDER="./models/speechbrain_ssl/kmeans_generation_run1/"
+mkdir -p "$KMEANS_EXPERIMENT_FOLDER/kmeans_frame_labels/" # Ensure label directory exists
 
+python ./speechbrain_ssl_training/generate_kmeans_targets.py \
+    --hparams_file ./speechbrain_ssl_training/hparams_ssl.yaml \
+    --input_sb_manifest_json ./data/manifest/sb_ssl_manifest_for_kmeans.json \
+    --output_kmeans_model_path "${KMEANS_EXPERIMENT_FOLDER}/kmeans_model.joblib" \
+    --output_target_label_dir "${KMEANS_EXPERIMENT_FOLDER}/kmeans_frame_labels/" \
+    --n_clusters 100 \
+    # --device "mps" # Or "cuda", "cpu"
+```
+-   **Output:**
+    -   K-means model: `${KMEANS_EXPERIMENT_FOLDER}/kmeans_model.joblib`.
+    -   Frame-level labels: `.npy` files in `${KMEANS_EXPERIMENT_FOLDER}/kmeans_frame_labels/`.
+-   **Important:** Update your `speechbrain_ssl_training/hparams_ssl.yaml` file:
+    -   Set `kmeans_model_path: !ref <output_folder>/kmeans_model.joblib`
+    -   Set `target_label_dir: !ref <output_folder>/kmeans_frame_labels/`
+    -   Ensure `num_ssl_clusters` matches `--n_clusters` used above.
+    -   The `output_folder` in `hparams_ssl.yaml` (or overridden via CLI for `train_sb_ssl.py`) should point to this `$KMEANS_EXPERIMENT_FOLDER` for the K-means artifacts to be found if using `!ref <output_folder>`. Alternatively, use absolute paths or paths relative to `data_folder`. For simplicity, the `test_run_sb_ssl.sh` script modifies a temporary hparams file to point to the correct dummy locations. For a real run, ensure these paths are correctly set in the hparams file used by `train_sb_ssl.py`.
+
+### Step 5: Start SpeechBrain SSL Model Training (HuBERT-style)
+
+This step uses the `train_sb_ssl.py` script to perform HuBERT-style SSL pre-training. The model learns to predict the K-means cluster IDs for masked portions of the audio features.
+
+Execute the `train_sb_ssl.py` script (from project root):
+```bash
+# Ensure hparams_ssl.yaml is configured with correct paths to K-means model and target labels,
+# and other HuBERT-specific parameters.
+TRAIN_OUTPUT_FOLDER="./models/speechbrain_ssl/my_runyoro_hubert_ssl_model_run1/"
+
+python ./speechbrain_ssl_training/train_sb_ssl.py \
+    --hparams_file ./speechbrain_ssl_training/hparams_ssl.yaml \
+    --output_folder "$TRAIN_OUTPUT_FOLDER" \
+    --data_folder ./data \
+    --number_of_epochs 10 \        # Adjust as needed
+    --batch_size 2 \              # Start small (1 or 2) for MacBook M4, adjust based on memory
+    # --device "mps" # Or "cuda", "cpu" 
+```
 -   **Important for MacBook M4 users:**
-    -   Start with a small `--per_device_train_batch_size` (e.g., 1 or 2).
-    -   Use `--gradient_accumulation_steps` to achieve a larger effective batch size.
-    -   `--fp16` is recommended for mixed-precision training on MPS.
-    -   Monitor your system resources (memory, CPU/GPU via Activity Monitor). If you encounter "out of memory" errors, reduce the batch size or gradient accumulation steps.
+    -   Use a small `--batch_size`.
+    -   Rely on `grad_accumulation_factor` in `hparams_ssl.yaml` for larger effective batch sizes.
+    -   Ensure PyTorch is using MPS.
+    -   Monitor system resources.
 
 ### Step 6: Monitoring Training & Outputs
 
--   **Console Logs:** Training progress, including loss and learning rate, will be printed to your terminal.
--   **Model Checkpoints:** Checkpoints will be saved periodically in subdirectories within your specified `--output_dir` (e.g., `./models/ssl/my_runyoro_ssl_model/checkpoint-500/`).
--   **Final Model:** The final trained SSL model will be saved in the root of the `--output_dir` once training is complete. This model can then be used as a base for ASR fine-tuning (Phase 3).
+-   **Console Logs:** Training progress (loss, learning rate, etc.) will be printed to your terminal by SpeechBrain.
+-   **Model Checkpoints:** Checkpoints are saved periodically in subdirectories within your specified `--output_folder` (e.g., `$TRAIN_OUTPUT_FOLDER/CKPT+epoch-X.../`) as configured in `hparams_ssl.yaml`.
+-   **Final Model:** The final trained SSL model components will be available in the `output_folder`.
 
 ### Managing YouTube Links and Re-processing
 
+(This section remains as it was, as it's still relevant for the initial data gathering.)
 When working with lists of YouTube links for data collection, consider the following:
-
--   **No Automatic Tracking of Processed URLs:** The current scripts do **not** automatically track which individual YouTube URLs have been successfully processed and included in a specific training run.
--   **Re-running Ingestion:**
-    -   If you provide the same `youtube_links.txt` file to `main_ingest.py` multiple times, `yt-dlp` (the underlying YouTube downloader) is generally smart enough to avoid re-downloading the full video/audio if the file already exists in `data/raw/youtube_downloads/` with the same name (e.g., `videoid.opus`). However, it might still check the URL.
-    -   Regardless of download, the subsequent audio processing and segmentation steps *will* run on all audio files found based on the provided links, meaning existing audio will be re-segmented and re-included in the generated `audio_manifest.jsonl`.
--   **Avoiding Re-processing or Using New Links:**
-    -   If you wish to avoid re-processing certain URLs or want to ensure only new links are used for a particular data preparation run, you should **manually manage your `youtube_links.txt` file.**
-    -   **Strategies:**
-        -   **Remove/Comment Out:** Delete or comment out (e.g., with a `#` at the beginning of the line, though the script doesn't explicitly support comments) URLs from `youtube_links.txt` that you consider "processed" or do not want to include in a new run.
-        -   **Separate Files:** Maintain different list files for different batches of URLs (e.g., `batch1_links.txt`, `batch2_links.txt`).
--   **Training Data:** The SSL training script (`train_ssl.py`) will use whatever data is present in the final processed dataset directory (`data/processed/ssl_dataset/`) that you point it to. If this dataset was generated from a manifest including old and new links, all that data will be used for training.
-
-**Future Consideration:** For more sophisticated management, a future enhancement could involve implementing a database or status file to track processed URLs and their inclusion in specific datasets or training runs. For now, manual management of the URL list is recommended.
+... (rest of the section unchanged) ...
 
 ---
 
