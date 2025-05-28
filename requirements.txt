@@ -3,3 +3,6 @@ datasets
 torch
 ipywidgets
 pydub
+speechbrain
+PyYAML
+numpy
