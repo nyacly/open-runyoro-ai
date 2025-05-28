@@ -82,7 +82,7 @@ python scripts/chat.py
 
 You can then type your Runyoro phrases, and the model will respond. Type "quit" or "exit" to end the chat session.
 
-## ## Training on Google Colab
+## Training on Google Colab
 
 This section guides you on how to use the provided Google Colab notebooks for training models.
 
@@ -91,7 +91,7 @@ This section guides you on how to use the provided Google Colab notebooks for tr
 *   Access to Google Colab and Google Drive.
 *   GPU runtime selected in Colab (Runtime > Change runtime type > GPU).
 
-### 2. Setup Steps
+### 2. Setup Steps (General)
 
 *   **Clone the Repository**:
     *   You can clone the repository into your Google Drive for better persistence of your notebooks and data, or directly into the Colab environment for a temporary session.
@@ -113,30 +113,60 @@ This section guides you on how to use the provided Google Colab notebooks for tr
         ```
 
 *   **Install Dependencies**:
-    *   Open either `notebooks/text_training_colab.ipynb` or `notebooks/speechbrain_ssl_training_colab.ipynb`.
+    *   Open the relevant Colab notebook (`text_training_colab.ipynb`, `speechbrain_ssl_training_colab.ipynb`, or `youtube_data_ingestion_colab.ipynb`).
     *   Run the first code cell that installs requirements:
         ```python
         !pip install -r requirements.txt
         ```
+    *   The `youtube_data_ingestion_colab.ipynb` and `speechbrain_ssl_training_colab.ipynb` may also have cells to ensure `ffmpeg` is available.
 
-*   **Prepare Data on Google Drive**:
-    *   **For Text Training (`notebooks/text_training_colab.ipynb`)**:
-        *   Upload your `train.txt` file to a folder on your Google Drive. For example: `MyDrive/your_project_repo_on_drive/data/processed/train.txt`.
-        *   In the notebook, find the "Configuration" cell and update the `BASE_DRIVE_PATH` variable to your project's root path on Drive (e.g., `/content/drive/MyDrive/your_project_repo_on_drive/`) and `DATA_DIR_RELATIVE` to the relative path from the base to your data (e.g., `data/processed`).
-    *   **For SpeechBrain SSL Training (`notebooks/speechbrain_ssl_training_colab.ipynb`)**:
-        *   Upload your audio data, manifest files (e.g., `train_sb_manifest.json`), and k-means target label files (`<utt_id>_kmeans_labels.npy`) to appropriate folders on your Google Drive.
-        *   In the notebook, carefully update the configuration variables in the "Configuration" cell:
-            *   `BASE_DRIVE_PATH`: Path to your project's root on Drive (e.g., `/content/drive/MyDrive/your_project_repo_on_drive/`).
-            *   `HPARAMS_FILE_REL_PATH`: Relative path *within your cloned repository* to your `hparams_ssl.yaml` (e.g., `runyoro_speech_ai/speechbrain_ssl_training/hparams_ssl.yaml`).
-            *   `EXPERIMENT_NAME`: A name for your experiment run (e.g., `ssl_run_01`). Outputs will be saved under a folder with this name.
-            *   `DATA_FOLDER_DRIVE`: Full path on Drive where your main audio data and manifest are located (e.g., `/content/drive/MyDrive/your_project_repo_on_drive/data_for_colab/`).
-            *   `TRAIN_MANIFEST_REL_PATH`: Relative path *within `DATA_FOLDER_DRIVE`* to your training manifest (e.g., `train_sb_manifest.json` or `manifests/train.json`).
-            *   `KMEANS_TARGET_DIR_REL_PATH`: Relative path *within your experiment's output folder on Drive* where k-means targets are expected or will be generated (e.g., `kmeans_frame_labels`).
-        *   Refer to the detailed comments and example directory structure provided in the notebook's "Configuration" section for clarity.
+### 3. Training Notebooks and Data Preparation
 
-### 3. Running the Notebooks
+#### 3.1 Text Training (`notebooks/text_training_colab.ipynb`)
 
-*   Open `notebooks/text_training_colab.ipynb` or `notebooks/speechbrain_ssl_training_colab.ipynb` in Google Colab.
+*   **Purpose**: Trains a GPT-2 style language model on a custom text corpus.
+*   **Data Preparation**:
+    *   Upload your `train.txt` file to a folder on your Google Drive. For example: `MyDrive/your_project_repo_on_drive/data/processed/train.txt`.
+    *   In the notebook, find the "Configuration" cell and update the `BASE_DRIVE_PATH` variable to your project's root path on Drive (e.g., `/content/drive/MyDrive/your_project_repo_on_drive/`) and `DATA_DIR_RELATIVE` to the relative path from the base to your data (e.g., `data/processed`).
+*   **Running**: Follow the instructions in the notebook to mount Drive, configure paths, and execute the training cells.
+
+#### 3.2 YouTube Data Ingestion for SSL (`notebooks/youtube_data_ingestion_colab.ipynb`)
+
+*   **Purpose**: This notebook is designed to simplify the process of obtaining and preparing audio data from YouTube for Self-Supervised Learning (SSL) with SpeechBrain. It downloads audio from a list of YouTube URLs, converts it to 16kHz mono WAV format, segments the audio based on silence and duration parameters, and finally generates a JSON manifest file. This manifest is specifically formatted for use with the `speechbrain_ssl_training_colab.ipynb` notebook.
+*   **Steps within the notebook**:
+    1.  **Setup**: Installs dependencies (including `yt-dlp` and `pydub`) and mounts your Google Drive.
+    2.  **Provide YouTube Links**: You can either paste YouTube links directly into a text area in the notebook or provide a path to a `.txt` file on your Google Drive containing the links (one per line).
+    3.  **Configure Output Paths**: Define base paths on your Google Drive where the raw downloaded audio, converted 16kHz mono WAV files, segmented audio clips, and the final JSON manifest will be stored.
+    4.  **Run Processing Cells**: Execute the cells sequentially to:
+        *   Download audio from the provided YouTube URLs.
+        *   Convert the downloaded audio to the standard 16kHz mono WAV format.
+        *   Segment the converted audio into smaller clips suitable for training.
+        *   Generate a JSON manifest file (e.g., `youtube_audio_manifest.json`) containing entries for each segmented audio clip, including its path on Drive and duration. This notebook generates absolute paths in the manifest.
+*   **Output**: The key outputs are the directory containing the segmented WAV files and the JSON manifest file. These are intended to be used as inputs for the SpeechBrain SSL training process.
+
+#### 3.3 SpeechBrain SSL Training (`notebooks/speechbrain_ssl_training_colab.ipynb`)
+
+*   **Purpose**: Trains a HuBERT-style Self-Supervised Learning (SSL) model using SpeechBrain.
+*   **Data Preparation**:
+    *   **If using data from YouTube**:
+        *   First, run the `notebooks/youtube_data_ingestion_colab.ipynb` as described above. This will produce a directory of segmented audio files and a JSON manifest file (e.g., `youtube_audio_manifest.json`) on your Google Drive.
+    *   **General Data Setup**:
+        *   You need a training manifest JSON file (SpeechBrain format, with utterance IDs as keys) and the corresponding audio files.
+        *   You also need k-means target labels (`<utt_id>_kmeans_labels.npy` files) for each utterance. These are typically generated by a separate script (e.g., `runyoro_speech_ai/speechbrain_ssl_training/generate_kmeans_targets.py`) using the audio data prepared for SSL training.
+    *   **Notebook Configuration**: In the "Configuration" cell of `speechbrain_ssl_training_colab.ipynb`:
+        *   `BASE_DRIVE_PATH`: Path to your project's root on Drive.
+        *   `HPARAMS_FILE_REL_PATH`: Relative path *within your cloned repository* to your `hparams_ssl.yaml`.
+        *   `EXPERIMENT_NAME`: A name for your experiment run.
+        *   `DATA_FOLDER_DRIVE`: This should point to the location on Google Drive where your main data (e.g., segmented audio folders from the YouTube ingestion notebook, or your manually prepared audio) is stored. The manifest paths will relate to this.
+        *   `TRAIN_MANIFEST_FULL_PATH_DRIVE`:
+            *   **If using data from the YouTube ingestion notebook**: Set this to the full path of the JSON manifest file generated by `youtube_data_ingestion_colab.ipynb` (e.g., `/content/drive/MyDrive/your_project_repo_on_drive/youtube_ssl_data/3_manifests/youtube_audio_manifest.json`).
+            *   **If using other data**: Set this to the full path of your prepared training manifest JSON file.
+        *   `KMEANS_TARGET_DIR_FULL_PATH_DRIVE`: Full path on Drive to the directory where your pre-generated k-means target label files (`.npy` files) are stored. Ensure these correspond to the utterances in your manifest.
+    *   Refer to the detailed comments and example directory structure provided in the notebook's "Configuration" section for clarity. The `youtube_data_ingestion_colab.ipynb` generates absolute paths in its manifest, which should simplify alignment with `DATA_FOLDER_DRIVE` if structured thoughtfully.
+
+### 4. Running the Training Notebooks
+
+*   Open the desired training notebook (`text_training_colab.ipynb` or `speechbrain_ssl_training_colab.ipynb`) in Google Colab.
 *   **Mount Drive**: Ensure you run the cell that mounts Google Drive:
     ```python
     from google.colab import drive
@@ -145,10 +175,10 @@ This section guides you on how to use the provided Google Colab notebooks for tr
 *   **Configure Paths**: Double-check and update all paths in the "Configuration" cell of the chosen notebook. This is crucial for the notebook to locate your data and save outputs correctly to your Google Drive.
 *   **Execute Cells**: Run the cells sequentially from top to bottom. The training process will begin, and all outputs (models, checkpoints, logs) will be saved to the directory you specified on Google Drive.
 
-### 4. Important Notes
+### 5. Important Notes (General for Colab Training)
 
 *   **Output Location**: All model checkpoints, logs, and other outputs will be saved to your Google Drive in the directory specified in the notebook's configuration (`OUTPUT_DIR` for text training, `OUTPUT_FOLDER_DRIVE` for SpeechBrain SSL training).
-*   **Resuming Training**: Both Colab notebooks are set up to automatically attempt to resume training from the latest checkpoint if one is found in the designated output directory on your Google Drive.
+*   **Resuming Training**: Both training Colab notebooks are set up to automatically attempt to resume training from the latest checkpoint if one is found in the designated output directory on your Google Drive.
 *   **Resource Limits**: Be mindful of Colab's resource limitations (GPU time, RAM, disk space on the Colab VM). For very long training runs or extremely large models/datasets, you might consider Colab Pro/Pro+ or explore strategies for more distributed data handling and robust checkpointing.
 *   **`hparams_ssl.yaml` for SpeechBrain**: The `speechbrain_ssl_training_colab.ipynb` will automatically copy your project's `hparams_ssl.yaml` (specified by `HPARAMS_FILE_REL_PATH`) to the experiment's output directory on Drive (e.g., `BASE_DRIVE_PATH/colab_experiments/EXPERIMENT_NAME/hparams_ssl_colab_exp.yaml`). It then modifies key paths within this *copied* YAML file (`data_folder`, `train_sb_manifest_file`, `output_folder`, `target_label_dir`) to point to your Google Drive locations. For subsequent runs or adjustments, you can directly modify this `hparams_ssl_colab_exp.yaml` file on your Google Drive.
 

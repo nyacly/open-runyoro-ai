@@ -2,7 +2,8 @@ transformers
 datasets
 torch
 ipywidgets
-pydub
+pydub # Requires ffmpeg or libav to be installed on the system
 speechbrain
 PyYAML
 numpy
+yt-dlp
