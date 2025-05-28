@@ -82,6 +82,76 @@ python scripts/chat.py
 
 You can then type your Runyoro phrases, and the model will respond. Type "quit" or "exit" to end the chat session.
 
+## ## Training on Google Colab
+
+This section guides you on how to use the provided Google Colab notebooks for training models.
+
+### 1. Prerequisites
+*   A Google account.
+*   Access to Google Colab and Google Drive.
+*   GPU runtime selected in Colab (Runtime > Change runtime type > GPU).
+
+### 2. Setup Steps
+
+*   **Clone the Repository**:
+    *   You can clone the repository into your Google Drive for better persistence of your notebooks and data, or directly into the Colab environment for a temporary session.
+    *   Example commands to run in a Colab cell:
+        ```bash
+        # Option 1: Clone into Google Drive (Recommended)
+        # First, mount your Google Drive:
+        from google.colab import drive
+        drive.mount('/content/drive')
+
+        # Then, navigate to your desired Drive directory (e.g., MyDrive/Colab_Notebooks/your_project) and clone:
+        # %cd /content/drive/MyDrive/your_projects_folder/ 
+        # !git clone https://github.com/your_username/your_repository.git # Replace with your repo URL
+        # %cd your_repository
+        
+        # Option 2: Clone directly into Colab environment (temporary)
+        # !git clone https://github.com/your_username/your_repository.git # Replace with your repo URL
+        # %cd your_repository
+        ```
+
+*   **Install Dependencies**:
+    *   Open either `notebooks/text_training_colab.ipynb` or `notebooks/speechbrain_ssl_training_colab.ipynb`.
+    *   Run the first code cell that installs requirements:
+        ```python
+        !pip install -r requirements.txt
+        ```
+
+*   **Prepare Data on Google Drive**:
+    *   **For Text Training (`notebooks/text_training_colab.ipynb`)**:
+        *   Upload your `train.txt` file to a folder on your Google Drive. For example: `MyDrive/your_project_repo_on_drive/data/processed/train.txt`.
+        *   In the notebook, find the "Configuration" cell and update the `BASE_DRIVE_PATH` variable to your project's root path on Drive (e.g., `/content/drive/MyDrive/your_project_repo_on_drive/`) and `DATA_DIR_RELATIVE` to the relative path from the base to your data (e.g., `data/processed`).
+    *   **For SpeechBrain SSL Training (`notebooks/speechbrain_ssl_training_colab.ipynb`)**:
+        *   Upload your audio data, manifest files (e.g., `train_sb_manifest.json`), and k-means target label files (`<utt_id>_kmeans_labels.npy`) to appropriate folders on your Google Drive.
+        *   In the notebook, carefully update the configuration variables in the "Configuration" cell:
+            *   `BASE_DRIVE_PATH`: Path to your project's root on Drive (e.g., `/content/drive/MyDrive/your_project_repo_on_drive/`).
+            *   `HPARAMS_FILE_REL_PATH`: Relative path *within your cloned repository* to your `hparams_ssl.yaml` (e.g., `runyoro_speech_ai/speechbrain_ssl_training/hparams_ssl.yaml`).
+            *   `EXPERIMENT_NAME`: A name for your experiment run (e.g., `ssl_run_01`). Outputs will be saved under a folder with this name.
+            *   `DATA_FOLDER_DRIVE`: Full path on Drive where your main audio data and manifest are located (e.g., `/content/drive/MyDrive/your_project_repo_on_drive/data_for_colab/`).
+            *   `TRAIN_MANIFEST_REL_PATH`: Relative path *within `DATA_FOLDER_DRIVE`* to your training manifest (e.g., `train_sb_manifest.json` or `manifests/train.json`).
+            *   `KMEANS_TARGET_DIR_REL_PATH`: Relative path *within your experiment's output folder on Drive* where k-means targets are expected or will be generated (e.g., `kmeans_frame_labels`).
+        *   Refer to the detailed comments and example directory structure provided in the notebook's "Configuration" section for clarity.
+
+### 3. Running the Notebooks
+
+*   Open `notebooks/text_training_colab.ipynb` or `notebooks/speechbrain_ssl_training_colab.ipynb` in Google Colab.
+*   **Mount Drive**: Ensure you run the cell that mounts Google Drive:
+    ```python
+    from google.colab import drive
+    drive.mount('/content/drive')
+    ```
+*   **Configure Paths**: Double-check and update all paths in the "Configuration" cell of the chosen notebook. This is crucial for the notebook to locate your data and save outputs correctly to your Google Drive.
+*   **Execute Cells**: Run the cells sequentially from top to bottom. The training process will begin, and all outputs (models, checkpoints, logs) will be saved to the directory you specified on Google Drive.
+
+### 4. Important Notes
+
+*   **Output Location**: All model checkpoints, logs, and other outputs will be saved to your Google Drive in the directory specified in the notebook's configuration (`OUTPUT_DIR` for text training, `OUTPUT_FOLDER_DRIVE` for SpeechBrain SSL training).
+*   **Resuming Training**: Both Colab notebooks are set up to automatically attempt to resume training from the latest checkpoint if one is found in the designated output directory on your Google Drive.
+*   **Resource Limits**: Be mindful of Colab's resource limitations (GPU time, RAM, disk space on the Colab VM). For very long training runs or extremely large models/datasets, you might consider Colab Pro/Pro+ or explore strategies for more distributed data handling and robust checkpointing.
+*   **`hparams_ssl.yaml` for SpeechBrain**: The `speechbrain_ssl_training_colab.ipynb` will automatically copy your project's `hparams_ssl.yaml` (specified by `HPARAMS_FILE_REL_PATH`) to the experiment's output directory on Drive (e.g., `BASE_DRIVE_PATH/colab_experiments/EXPERIMENT_NAME/hparams_ssl_colab_exp.yaml`). It then modifies key paths within this *copied* YAML file (`data_folder`, `train_sb_manifest_file`, `output_folder`, `target_label_dir`) to point to your Google Drive locations. For subsequent runs or adjustments, you can directly modify this `hparams_ssl_colab_exp.yaml` file on your Google Drive.
+
 ## 📜 License
 
 *   **Code:** Licensed under the [MIT License](LICENSE.md) (You'll need to create this file, or ask Jules to create it with a standard MIT template).
