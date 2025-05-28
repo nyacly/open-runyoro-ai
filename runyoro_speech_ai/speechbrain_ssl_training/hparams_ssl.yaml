@@ -45,10 +45,10 @@ mask_length: 10             # Length of each mask span (in frames)
 mask_min_spans: 2           # Minimum number of mask spans per utterance (conceptual, actual masking logic in Brain)
 
 # Prediction Head (on top of Wav2Vec2 encoder, to predict K-means cluster IDs)
-ssl_prediction_head: !new:speechbrain.nnet.linear.Linear
-    input_size: null # This will be dynamically set from wav2vec2_model.get_enc_out_size() or similar in the Brain
-    n_neurons: !ref <num_ssl_clusters> # Output neurons = number of K-means clusters
-    bias: True
+# ssl_prediction_head: !new:speechbrain.nnet.linear.Linear
+#     input_size: null
+#     n_neurons: !ref <num_ssl_clusters>
+#     bias: True
     # Add other linear layer params if needed, e.g., layer_norm: True
 
 # Optimizer
@@ -74,7 +74,7 @@ checkpointer:
 # Modules dictionary - where we define our main components
 # This will be instantiated by the training script.
 modules:
-    wav2vec2_model: !new:speechbrain.lobes.models.huggingface_wav2vec.HuggingFaceWav2Vec2
+    wav2vec2_model: !new:speechbrain.lobes.models.huggingface_transformers.wav2vec2.Wav2Vec2
         source: !ref <wav2vec2_hub>
         output_norm: !ref <wav2vec2_output_norm>
         freeze: False # Overall freeze for the HF model (will be overridden by specific layer freezing below)
@@ -82,7 +82,7 @@ modules:
         # freeze_encoder_layers: !ref <wav2vec2_freeze_encoder_layers> # This might not be a direct param here, handled in Brain
         save_path: !ref <output_folder>/wav2vec2_checkpoint # Path for SB to save internal HF model if needed
     
-    ssl_head: !ref <ssl_prediction_head> # Reference the new prediction head
+#    ssl_head: !ref <ssl_prediction_head> # Reference the new prediction head
 
 # Loss function for SSL (CrossEntropy for predicting cluster IDs)
 # This will be instantiated/called in the Brain class's compute_objectives method.

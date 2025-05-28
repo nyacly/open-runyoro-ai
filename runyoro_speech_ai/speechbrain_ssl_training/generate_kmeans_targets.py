@@ -4,13 +4,14 @@ import torch
 import speechbrain as sb
 from speechbrain.dataio.dataset import DynamicItemDataset
 from speechbrain.dataio.dataio import read_audio
-from speechbrain.lobes.models.huggingface_wav2vec import HuggingFaceWav2Vec2
+from speechbrain.lobes.models.huggingface_transformers.wav2vec2 import Wav2Vec2
 from sklearn.cluster import MiniBatchKMeans # Efficient for large data
 import numpy as np
 import joblib # For saving sklearn models
 import logging
 import argparse
 import yaml # For loading hparams (to get wav2vec2_hub, data_folder, etc.)
+import hyperpyyaml
 import json # For reading the SB manifest
 
 logger = logging.getLogger(__name__)
@@ -184,15 +185,27 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
+    kmeans_experiment_folder = os.getenv("KMEANS_EXPERIMENT_FOLDER")
+    if not kmeans_experiment_folder:
+        # It's good practice to log or raise an error if critical env var is missing
+        logger.error("KMEANS_EXPERIMENT_FOLDER environment variable not set. Please set it before running the script.")
+        sys.exit(1) # Make sure sys is imported if you use sys.exit(1)
+    
+    overrides_dict = {"output_folder": kmeans_experiment_folder}
     # Load hparams to get data_folder, wav2vec2_hub etc.
     with open(args.hparams_file) as fin:
-        hparams = sb.load_extended_yaml(fin, overrides={})
+        hparams = hyperpyyaml.load_hyperpyyaml(fin, overrides=overrides_dict, overrides_must_match=False)
 
     # Device handling
     if args.device:
         device = args.device
     else:
-        device = sb.core.auto_device()
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available(): # Check for MPS (Apple Silicon)
+            device = "mps"
+        else:
+            device = "cpu"
     logger.info(f"Using device: {device}")
 
     # Ensure output directories exist before starting
@@ -208,7 +221,7 @@ if __name__ == "__main__":
     ensure_output_dir(model_cache_dir) # Ensure cache dir exists
     logger.info(f"Loading Wav2Vec2 model: {hparams['wav2vec2_hub']}. Cache path: {model_cache_dir}")
     
-    wav2vec2_model = HuggingFaceWav2Vec2(
+    wav2vec2_model = Wav2Vec2(
         source=hparams["wav2vec2_hub"],
         save_path=model_cache_dir, 
         output_norm=hparams.get("wav2vec2_output_norm", True),
