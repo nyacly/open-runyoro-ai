@@ -7,3 +7,5 @@ speechbrain
 PyYAML
 numpy
 yt-dlp
+scikit-learn
+joblib
