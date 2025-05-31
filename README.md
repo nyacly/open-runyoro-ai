@@ -103,10 +103,10 @@ This section guides you on how to use the provided Google Colab notebooks for tr
         drive.mount('/content/drive')
 
         # Then, navigate to your desired Drive directory (e.g., MyDrive/Colab_Notebooks/your_project) and clone:
-        # %cd /content/drive/MyDrive/your_projects_folder/ 
+        # %cd /content/drive/MyDrive/your_projects_folder/
         # !git clone https://github.com/your_username/your_repository.git # Replace with your repo URL
         # %cd your_repository
-        
+
         # Option 2: Clone directly into Colab environment (temporary)
         # !git clone https://github.com/your_username/your_repository.git # Replace with your repo URL
         # %cd your_repository
