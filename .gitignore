@@ -81,3 +81,12 @@ logs/
 ehthumbs.db
 Thumbs.db
 .venv/
+
+# Colab artifacts
+colab_experiments/
+youtube_ssl_data/
+runyoro_speech_ai/**/__pycache__/
+*.ckpt
+*.pt
+*.ipynb_checkpoints
+

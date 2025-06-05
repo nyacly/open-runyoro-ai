@@ -74,7 +74,7 @@ checkpointer:
 # Modules dictionary - where we define our main components
 # This will be instantiated by the training script.
 modules:
-    wav2vec2_model: !new:speechbrain.lobes.models.huggingface_transformers.wav2vec2.Wav2Vec2
+    wav2vec2_model: !new:speechbrain.lobes.models.huggingface_wav2vec.HuggingFaceWav2Vec2
         source: !ref <wav2vec2_hub>
         output_norm: !ref <wav2vec2_output_norm>
         freeze: False # Overall freeze for the HF model (will be overridden by specific layer freezing below)
