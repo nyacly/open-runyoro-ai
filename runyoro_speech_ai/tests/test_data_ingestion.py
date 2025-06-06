@@ -113,7 +113,11 @@ def local_files_fixture_dir(tmp_path):
 def test_local_file_ingestion(local_files_fixture_dir, tmp_path):
     user_upload_dir = local_files_fixture_dir
     raw_files_target_dir = tmp_path / "local_ingest_target"
-    ingest_local_media(user_upload_dir=str(user_upload_dir), raw_files_target_dir=str(raw_files_target_dir))
+    result = ingest_local_media(
+        user_upload_dir=str(user_upload_dir),
+        raw_files_target_dir=str(raw_files_target_dir),
+    )
+    assert result is True
     assert raw_files_target_dir.exists()
     copied_files = os.listdir(raw_files_target_dir)
     assert len(copied_files) == 3
@@ -128,7 +132,11 @@ def test_audio_conversion(sample_audio_mp3, tmp_path):
         pytest.skip("Skipping test_audio_conversion as MP3 fixture generation failed (likely no ffmpeg).")
     input_dir = os.path.dirname(sample_audio_mp3)
     conversion_output_dir = tmp_path / "converted_audio"
-    run_conversion_stage(input_dir=str(input_dir), conversion_output_dir=str(conversion_output_dir))
+    result = run_conversion_stage(
+        input_dir=str(input_dir),
+        conversion_output_dir=str(conversion_output_dir),
+    )
+    assert result is True
     original_basename = os.path.splitext(os.path.basename(sample_audio_mp3))[0]
     expected_output_filename = f"{original_basename}.wav"
     output_filepath = conversion_output_dir / expected_output_filename
@@ -147,11 +155,17 @@ def test_audio_segmentation_basic(sample_audio_wav_for_segmentation, tmp_path):
     segmentation_output_dir = tmp_path / "segmented_audio_basic"
     min_silence_len, silence_thresh, keep_silence = 700, -45, 250
     min_duration_ms, max_duration_ms, target_split_duration_ms = 300, 15000, 10000
-    run_segmentation_stage(
-        segmentation_input_dir=str(test_specific_input_dir), segmentation_output_dir=str(segmentation_output_dir),
-        min_silence_len=min_silence_len, silence_thresh=silence_thresh, keep_silence=keep_silence,
-        min_duration_ms=min_duration_ms, max_duration_ms=max_duration_ms, target_split_duration_ms=target_split_duration_ms
+    result = run_segmentation_stage(
+        segmentation_input_dir=str(test_specific_input_dir),
+        segmentation_output_dir=str(segmentation_output_dir),
+        min_silence_len=min_silence_len,
+        silence_thresh=silence_thresh,
+        keep_silence=keep_silence,
+        min_duration_ms=min_duration_ms,
+        max_duration_ms=max_duration_ms,
+        target_split_duration_ms=target_split_duration_ms,
     )
+    assert result is True
     output_files = list(segmentation_output_dir.glob("*.wav"))
     assert len(output_files) == 2, f"Expected 2 segments, found {len(output_files)}"
     for seg_file in output_files:
@@ -167,12 +181,17 @@ def test_audio_segmentation_no_silence_force_split(sample_audio_wav_no_silence, 
     min_duration_ms = 500 
     max_duration_ms = 1500 
     target_split_duration_ms = 800
-
-    run_segmentation_stage(
-        segmentation_input_dir=str(input_dir), segmentation_output_dir=str(segmentation_output_dir),
-        min_silence_len=min_silence_len, silence_thresh=silence_thresh, keep_silence=keep_silence,
-        min_duration_ms=min_duration_ms, max_duration_ms=max_duration_ms, target_split_duration_ms=target_split_duration_ms
+    result = run_segmentation_stage(
+        segmentation_input_dir=str(input_dir),
+        segmentation_output_dir=str(segmentation_output_dir),
+        min_silence_len=min_silence_len,
+        silence_thresh=silence_thresh,
+        keep_silence=keep_silence,
+        min_duration_ms=min_duration_ms,
+        max_duration_ms=max_duration_ms,
+        target_split_duration_ms=target_split_duration_ms,
     )
+    assert result is True
     output_files = list(segmentation_output_dir.glob("*.wav"))
     assert len(output_files) == 2, f"Expected 2 segments after force splitting, found {len(output_files)}"
     for seg_file in output_files:
