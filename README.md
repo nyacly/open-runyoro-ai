@@ -183,6 +183,54 @@ For SSL training (e.g., HuBERT-style), there is a three-notebook workflow:
         *   `KMEANS_TARGET_DIR_FULL_PATH_DRIVE`: **Crucially**, this must point to the output directory from the `generate_kmeans_targets_colab.ipynb` notebook (step 3.2.2), where the `<utt_id>_kmeans_labels.npy` files are stored.
     *   The notebook adapts an `hparams_ssl.yaml` file for Colab, overriding key paths to point to your Drive locations.
 
+#### 3.3 Fine-tune ASR with Bible data (`notebooks/runyoro_bible_asr_finetune.ipynb`)
+
+*   **Purpose**: This notebook provides an end-to-end pipeline to fine-tune an Automatic Speech Recognition (ASR) model for Runyoro using Bible audio and text data. It leverages a pre-trained SSL (Self-Supervised Learning) model as the encoder and adds a CTC (Connectionist Temporal Classification) head for ASR.
+*   **Workflow**:
+    1.  **Setup**: Detects Colab/local environment, installs dependencies, and configures project paths.
+    2.  **Configuration**: Uses UI widgets to input your DBP API Key, desired Bible ID (e.g., `NYOBSN` for Runyoro audio), text fileset ID (e.g., `NYOTBTN2ET` for Runyoro text), specific books for download (optional), path to your pre-trained SSL checkpoint (`.ckpt` file), and number of fine-tuning epochs.
+    3.  **Data Download**: Calls a script to download audio chapters and corresponding verse texts from the Bible Brain API for the specified Bible ID and books.
+    4.  **Manifest Creation**: Calls a script to process the downloaded data and create a JSON manifest file in the format required by SpeechBrain.
+    5.  **ASR Fine-tuning**:
+        *   Dynamically generates a hyperparameter YAML file based on notebook inputs.
+        *   Calls the main training script (`runyoro_speech_ai/asr_finetune/train_ctc.py`).
+        *   This script loads your SSL encoder checkpoint, trains a SentencePiece tokenizer on the downloaded Bible text, attaches a CTC head to the encoder, and fine-tunes the model for the specified number of epochs.
+        *   The encoder is typically frozen for the first epoch and then unfrozen for further fine-tuning.
+    6.  **Output**:
+        *   Fine-tuned ASR model checkpoints are saved (e.g., in `asr_finetune_output/[experiment_name]/save/CKPT+...`). The notebook also refers to the original issue's desired path `asr_finetune/checkpoints/epoch{n}.ckpt`, so ensure your training script's checkpointer configuration in the YAML matches your desired output structure.
+        *   The notebook includes a section to demonstrate decoding a few sample audio clips using the trained model and display the transcriptions.
+*   **Key Inputs**:
+    *   DBP API Key.
+    *   Bible ID for audio (e.g., `NYOBSN`).
+    *   Text Fileset ID for transcripts (e.g., `NYOTBTN2ET`).
+    *   Path to your pre-trained SSL model checkpoint.
+    *   Number of epochs for fine-tuning.
+*   **Running**: Follow the instructions and execute cells sequentially in the `notebooks/runyoro_bible_asr_finetune.ipynb` notebook. It will guide you through each step from data download to ASR model fine-tuning.
+
+##### Using the CLI Scripts Directly
+
+Alternatively, you can run the underlying Python scripts from your terminal:
+
+1.  **Download Data**:
+    ```bash
+    python -m runyoro_speech_ai.data_ingestion.download_bible_brain --api_key YOUR_DBP_KEY --dest data/bible_finetune_data --language_codes nyo --fileset_ids_audio NYOBSN --fileset_id_text NYOTBTN2ET --book_ids MAT,MRK,LUK,JHN
+    ```
+    *   Adjust `dest`, `fileset_ids_audio`, `fileset_id_text`, and `book_ids` as needed.
+
+2.  **Build Manifest**:
+    ```bash
+    python -m runyoro_speech_ai.asr_finetune.build_manifest --audio_dir_base data/bible_finetune_data/audio --text_dir_base data/bible_finetune_data/text --audio_fileset_id NYOBSN --text_fileset_id NYOTBTN2ET --manifest_path data/bible_finetune_data/runyoro_gospels_manifest.json --language_code nyo
+    ```
+    *   Ensure paths and fileset IDs match your downloaded data.
+
+3.  **Train ASR Model**:
+    First, you'll need a hyperparameter YAML file (e.g., `hparams/my_asr_finetune.yaml`). The `notebooks/runyoro_bible_asr_finetune.ipynb` generates one dynamically, which you can adapt. This YAML file will point to your SSL checkpoint, the manifest file, and define model architecture, learning rates, epochs, etc.
+    ```bash
+    python -m runyoro_speech_ai.asr_finetune.train_ctc hparams/my_asr_finetune.yaml --data_folder ./data/bible_finetune_data --output_folder ./asr_finetune_output/my_experiment_run
+    ```
+    *   The `train_ctc.py` script handles SentencePiece model training internally based on the manifest data.
+    *   Ensure the paths in the YAML and CLI overrides are correct.
+
 ### 4. Running the Training Notebooks
 
 *   Open the desired training notebook in Google Colab.

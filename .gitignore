@@ -90,6 +90,9 @@ runyoro_speech_ai/**/__pycache__/
 *.pt
 *.ipynb_checkpoints
 
-# Fine-tuning artifacts and downloaded Bible data
+# Fine-tuning outputs, downloaded data, and cached models
 asr_finetune/
-data/bible/
+asr_finetune_output/
+data/bible_finetune_data/
+huggingface_cache/
+.cache/huggingface_models/
