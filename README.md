@@ -27,14 +27,14 @@ This is the most crucial part of the project right now. High-quality data is the
     *   We need plain text files (.txt) containing Runyoro.
     *   Sources can include: books, articles, websites, blogs, proverbs, folk tales, personal writings, etc.
     *   Please ensure the text is in Runyoro and as clean as possible.
-    *   **How to submit:** Place your `.txt` files in the `data/text/` directory via a Pull Request. See our [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+    *   **How to submit:** Place your `.txt` files in the `data/text/` directory via a Pull Request.
 *   **Audio Data:**
     *   We need audio recordings (.wav, .mp3, .flac) of spoken Runyoro **along with their accurate transcriptions.**
     *   Ideal audio is clear, with minimal background noise, spoken by a single speaker per file.
     *   **How to submit:**
         1.  Place your audio files in `data/audio/wavs/` (this directory should now exist).
         2.  Create/update a `data/audio/metadata.csv` file with the filename and its transcription. Format: `filename|transcription`. Example: `wavs/runyoro_sentence1.wav|Ekicweka ky'orubazo rwa Runyoro.` (Note: The path in metadata.csv is relative to the `data/audio/` directory).
-        3.  Submit via a Pull Request. See our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed instructions, especially regarding audio quality and transcription format.
+        3.  Submit via a Pull Request. Follow the audio quality and transcription guidelines in this README.
     *   **Important for Audio:** We use Git LFS for large audio files. Ensure you have it installed (`git lfs install` system-wide or per-user, then the `.gitattributes` file handles repo-specific tracking).
 
 **2. Code Contributions:**
@@ -47,7 +47,7 @@ This is the most crucial part of the project right now. High-quality data is the
 **4. Documentation & Community:**
     *   Improve this README, write tutorials, help answer questions.
 
-Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+Please read the guidelines in this README and open an issue if you have questions.
 
 ## 📂 Repository Structure
 
@@ -193,7 +193,7 @@ For SSL training (e.g., HuBERT-style), there is a three-notebook workflow:
     4.  **Manifest Creation**: Calls a script to process the downloaded data and create a JSON manifest file in the format required by SpeechBrain.
     5.  **ASR Fine-tuning**:
         *   Dynamically generates a hyperparameter YAML file based on notebook inputs.
-        *   Calls the main training script (`runyoro_speech_ai/asr_finetune/train_ctc.py`).
+        *   Calls the main training script `train_ctc.py` (not yet included).
         *   This script loads your SSL encoder checkpoint, trains a SentencePiece tokenizer on the downloaded Bible text, attaches a CTC head to the encoder, and fine-tunes the model for the specified number of epochs.
         *   The encoder is typically frozen for the first epoch and then unfrozen for further fine-tuning.
     6.  **Output**:
@@ -207,29 +207,6 @@ For SSL training (e.g., HuBERT-style), there is a three-notebook workflow:
     *   Number of epochs for fine-tuning.
 *   **Running**: Follow the instructions and execute cells sequentially in the `notebooks/runyoro_bible_asr_finetune.ipynb` notebook. It will guide you through each step from data download to ASR model fine-tuning.
 
-##### Using the CLI Scripts Directly
-
-Alternatively, you can run the underlying Python scripts from your terminal:
-
-1.  **Download Data**:
-    ```bash
-    python -m runyoro_speech_ai.data_ingestion.download_bible_brain --api_key YOUR_DBP_KEY --dest data/bible_finetune_data --language_codes nyo --fileset_ids_audio NYOBSN --fileset_id_text NYOTBTN2ET --book_ids MAT,MRK,LUK,JHN
-    ```
-    *   Adjust `dest`, `fileset_ids_audio`, `fileset_id_text`, and `book_ids` as needed.
-
-2.  **Build Manifest**:
-    ```bash
-    python -m runyoro_speech_ai.asr_finetune.build_manifest --audio_dir_base data/bible_finetune_data/audio --text_dir_base data/bible_finetune_data/text --audio_fileset_id NYOBSN --text_fileset_id NYOTBTN2ET --manifest_path data/bible_finetune_data/runyoro_gospels_manifest.json --language_code nyo
-    ```
-    *   Ensure paths and fileset IDs match your downloaded data.
-
-3.  **Train ASR Model**:
-    First, you'll need a hyperparameter YAML file (e.g., `hparams/my_asr_finetune.yaml`). The `notebooks/runyoro_bible_asr_finetune.ipynb` generates one dynamically, which you can adapt. This YAML file will point to your SSL checkpoint, the manifest file, and define model architecture, learning rates, epochs, etc.
-    ```bash
-    python -m runyoro_speech_ai.asr_finetune.train_ctc hparams/my_asr_finetune.yaml --data_folder ./data/bible_finetune_data --output_folder ./asr_finetune_output/my_experiment_run
-    ```
-    *   The `train_ctc.py` script handles SentencePiece model training internally based on the manifest data.
-    *   Ensure the paths in the YAML and CLI overrides are correct.
 
 ### 4. Running the Training Notebooks
 
@@ -247,7 +224,7 @@ Alternatively, you can run the underlying Python scripts from your terminal:
 
 ## 📜 License
 
-*   **Code:** Licensed under the [MIT License](LICENSE.md) (You'll need to create this file, or ask Jules to create it with a standard MIT template).
+*   **Code:** Licensed under the [MIT License](LICENSE.md).
 *   **Data:** We encourage contributors to submit data under permissive licenses like Creative Commons (e.g., CC-BY-SA 4.0). Please specify the license for any data you contribute if it's not your original work or if you wish to use a specific license. By default, contributions of original data by contributors are assumed to be under [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) unless otherwise specified.
 
 ## 💬 Get in Touch
