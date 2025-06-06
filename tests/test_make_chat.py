@@ -152,4 +152,3 @@ def test_make_chat_basic(tmp_path):
     # 8 vocab lines, 5 other lines. Total ~24-25 sentences.
     # The test script currently logs "Detected X dialogue/vocab/other segments" based on matching these sentences.
     # This is what we are asserting above.
-```
