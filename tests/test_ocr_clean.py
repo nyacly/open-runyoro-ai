@@ -154,6 +154,7 @@ def test_ocr_clean_png_processing(tmp_path):
 
 # A very basic test to ensure the script runs with --help
 def test_ocr_clean_help(tmp_path):
+    pytest.importorskip("pdfminer")
     cmd = ["python", "-m", "src.openrunyoro.ocr_clean", "--help"]
     result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
     assert result.returncode == 0, f"ocr_clean.py --help failed: {result.stderr}"

@@ -59,7 +59,7 @@ This project follows a structured layout to keep code, data, and documentation o
         -   `train_sb_ssl.py`: Script for running SSL training with SpeechBrain.
         -   `hparams_ssl.yaml`: Hyperparameter file for SpeechBrain SSL training.
         -   `README.md`: Documentation specific to SpeechBrain SSL training.
-    -   **`asr_finetuning/`**: (Future use) Will contain scripts and resources for fine-tuning models for Automatic Speech Recognition (ASR).
+    -   **`asr_finetune/`**: Scripts for fine-tuning ASR models (manifest creation and CTC training).
     -   **`inference/`**: (Future use) Will house scripts for using trained models to perform transcription.
     -   **`models/`**: Default directory for storing trained model checkpoints and related artifacts.
         -   `models/ssl/`: (Legacy Transformers) For SSL pre-trained models from `ssl_training/`.

@@ -36,6 +36,7 @@ def ensure_logs_dir_for_merge_weight():
     Path("logs").mkdir(exist_ok=True)
 
 def test_merge_weight_basic(tmp_path):
+    pytest.importorskip("rapidfuzz")
     # 1. Setup
     primary_jsonl_path = tmp_path / "primary.jsonl"
     secondary_jsonl_path = tmp_path / "secondary.jsonl"
@@ -125,5 +126,3 @@ def test_merge_weight_basic(tmp_path):
     assert "Successfully wrote training set." in log_content
     assert "Successfully wrote validation set." in log_content
     assert "Processing complete." in log_content
-
-```
