@@ -10,10 +10,11 @@ This project aims to create datasets and models for Natural Language Processing 
     *   **Text Corpus:** Collect a diverse and large corpus of written Runyoro.
     *   **Speech Corpus:** Collect transcribed Runyoro audio from native speakers.
 2.  **Model Development (Future):**
-    *   Text-to-Speech (TTS) for Runyoro.
+    *   Text-to-Speech (TTS) for Runyoro *(planned)*.
     *   Automatic Speech Recognition (ASR) for Runyoro.
     *   Machine Translation (e.g., Runyoro <-> English).
     *   Other NLP tools (e.g., part-of-speech taggers, named entity recognizers).
+    *   A minimal audio preprocessing example is available in `scripts/preprocess_audio.py`.
 
 ## 🚀 How to Contribute
 
@@ -56,7 +57,8 @@ Please read the guidelines in this README and open an issue if you have question
     *   `data/audio/`: Speech data.
         *   `data/audio/wavs/`: Audio files (e.g., .wav)
         *   `data/audio/metadata.csv`: Transcriptions for audio files (contributors will create/update this with their audio).
-*   `scripts/`: Scripts for data processing, training, etc. (Future)
+*   `scripts/`: Utility scripts. Currently includes a simple audio
+    preprocessing example. More training helpers will be added over time.
 *   `models/`: Trained model files. (Future)
 *   `docs/`: Documentation. (Future)
 
@@ -234,3 +236,7 @@ For SSL training (e.g., HuBERT-style), there is a three-notebook workflow:
 
 ---
 *Let's build something amazing for the Runyoro language!*
+
+## Future Work
+
+Training scripts for TTS models are still a work in progress. Contributions are welcome!
