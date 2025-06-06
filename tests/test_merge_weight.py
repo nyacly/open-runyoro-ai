@@ -126,4 +126,3 @@ def test_merge_weight_basic(tmp_path):
     assert "Successfully wrote validation set." in log_content
     assert "Processing complete." in log_content
 
-```
