@@ -93,13 +93,7 @@ def main():
 
     # Sentence Splitting
     logger.info("Processing text with SpaCy for sentence splitting...")
-    doc = nlp(text_content)
-    sentences_text = []
-    for sent in doc.sents:
-        stripped_sent = sent.text.strip()
-        if stripped_sent: # Only add non-empty sentences
-            sentences_text.append(stripped_sent)
-    
+    sentences_text = [line.strip() for line in text_content.splitlines() if line.strip()]
     logger.info(f"Found {len(sentences_text)} sentences after SpaCy processing.")
 
     # Heuristic Detection
@@ -108,8 +102,8 @@ def main():
     # The problem description's regex for dialogue seems to prefer English alphabet for speaker.
     # For Runyoro/Rutooro, a more general speaker prefix might be needed, but using the provided one.
     # Python's re module handles Unicode by default in Python 3.
-    dialogue_regex = re.compile(r"^\s*([\w\s]+(?:’s)?[:-])\s*(.+)") # Using \w for speaker to be more general
-    vocab_regex = re.compile(r"^\s*•?\s*([a-zA-Z’']+)\s*[-–—]\s*(.+)") # Allow different dashes, ensure word part matches typical word chars
+    dialogue_regex = re.compile(r"^\s*([\w\s]+(?:’s)?[:\-])\s*(.+)")  # speaker label ending with ':' or '-'
+    vocab_regex = re.compile(r"^\s*•?\s*([\w’]+)\s*[-–—]\s*(.+)")  # allow accented characters in the word
 
     dialogue_segments = []
     vocabulary_segments = []
@@ -141,7 +135,7 @@ def main():
 
     logger.info(f"Detected {len(dialogue_segments)} dialogue segments.")
     logger.info(f"Detected {len(vocabulary_segments)} vocabulary segments.")
-    logger.info(f"Detected {len(other_segments)} other segments (unmatched).")
+    logger.info(f"Detected {len(other_segments)} other segments.")
 
     all_chat_turns = []
 

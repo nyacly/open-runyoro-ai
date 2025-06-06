@@ -142,7 +142,7 @@ def main():
         logger.info(f"Starting near-duplicate removal. Initial count: {len(combined_data)} conversations.")
         # The remove_near_duplicates function expects a list of JSON strings.
         # Our combined_data is already a list of strings (JSON objects per line).
-        deduplicated_data = remove_near_duplicates(combined_data, threshold_ratio=90.0)
+        deduplicated_data = remove_near_duplicates(combined_data, threshold_ratio=85.0)
         logger.info(f"Finished near-duplicate removal. Retained {len(deduplicated_data)} conversations from {len(combined_data)}.")
         combined_data = deduplicated_data # Update combined_data to the deduplicated version
     else:
@@ -201,15 +201,15 @@ def main():
     logger.info("Processing complete.")
 
 
-def remove_near_duplicates(conversations_json_list: list[str], threshold_ratio: float = 90.0) -> list[str]:
+def remove_near_duplicates(conversations_json_list: list[str], threshold_ratio: float = 85.0) -> list[str]:
     """
     Removes near-duplicate conversations based on the similarity of their assistant responses.
     A conversation is a JSON string.
     threshold_ratio is on a 0-100 scale (like rapidfuzz.fuzz.ratio).
     """
     deduplicated_conversations_json = []
-    # Store only the assistant text of retained conversations for comparison to avoid repeated json.loads()
-    retained_assistant_texts = [] 
+    # Store tuples of (assistant_text, original_json) for comparison
+    retained_records: list[tuple[str, str]] = []
 
     for conv_idx, current_conv_json_str in enumerate(conversations_json_list):
         if (conv_idx + 1) % 5000 == 0: # Log progress every 5000 conversations
@@ -230,10 +230,8 @@ def remove_near_duplicates(conversations_json_list: list[str], threshold_ratio: 
 
         if not current_assistant_text: # No assistant text, or only non-string content
             deduplicated_conversations_json.append(current_conv_json_str)
-            # No specific assistant text to store for comparison, or it's empty.
-            # We could store an empty string or a special marker if we want to prevent
-            # other no-assistant-text convos from accumulating, but for now, just add.
-            retained_assistant_texts.append("") 
+            # Store empty assistant text so future comparisons skip similarity checks
+            retained_records.append(("", current_conv_json_str))
             continue
 
         is_near_duplicate = False
@@ -242,21 +240,21 @@ def remove_near_duplicates(conversations_json_list: list[str], threshold_ratio: 
         # For large M, process.extractOne might be faster if it can be adapted, 
         # but it finds the *best* match, not just *any* match above threshold.
         # A direct loop is more accurate for "is it a duplicate of *any* existing".
-        for existing_assistant_text in retained_assistant_texts:
-            if not existing_assistant_text: # Skip comparison if an existing retained one had no assistant text
+        for existing_assistant_text, existing_json in retained_records:
+            if not existing_assistant_text:
                 continue
-            
+
             # Calculate similarity ratio (0-100)
             similarity = fuzz.ratio(current_assistant_text, existing_assistant_text)
-            if similarity > threshold_ratio:
+            if similarity > threshold_ratio and current_conv_json_str != existing_json:
                 is_near_duplicate = True
                 # logger.debug(f"Near duplicate found! Ratio: {similarity:.2f}%\n  New: {current_assistant_text[:100]}...\n  Old: {existing_assistant_text[:100]}...")
                 break
         
         if not is_near_duplicate:
             deduplicated_conversations_json.append(current_conv_json_str)
-            retained_assistant_texts.append(current_assistant_text)
-            
+            retained_records.append((current_assistant_text, current_conv_json_str))
+
     return deduplicated_conversations_json
 
 if __name__ == "__main__":
