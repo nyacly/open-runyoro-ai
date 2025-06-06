@@ -1,4 +1,4 @@
-# Open Runyoro AI 🇷🇼🇺🇬🇹🇿
+# Open Runyoro AI 🇺🇬
 
 **Our Vision:** To build open-source AI tools that can read, understand, and speak Runyoro, helping to preserve and promote the language in the digital age.
 
