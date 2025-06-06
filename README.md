@@ -69,8 +69,10 @@ This project includes a way to interactively chat with the trained Runyoro langu
 1.  **Trained Model:** Ensure you have a trained model. The training script `scripts/train_text.py` saves its output to the `models/text/` directory by default. This chat script expects the model and tokenizer to be present there.
 2.  **Dependencies:** Install the necessary Python packages:
     ```bash
+    # Install exact versions known to work with our notebooks
     pip install -r requirements.txt
     ```
+    These versions are pinned in `requirements.txt` and are tested with the training notebooks.
 
 ### Running the Chat Script
 
@@ -116,6 +118,7 @@ This section guides you on how to use the provided Google Colab notebooks for tr
     *   Open the relevant Colab notebook.
     *   Run the first code cell that installs requirements:
         ```python
+        # Installs the same pinned versions used during development
         !pip install -r requirements.txt
         ```
     *   Some notebooks (e.g., `youtube_data_ingestion_colab.ipynb`, `speechbrain_ssl_training_colab.ipynb`) may also have cells to ensure `ffmpeg` is available.
