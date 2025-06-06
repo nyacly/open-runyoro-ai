@@ -90,3 +90,6 @@ runyoro_speech_ai/**/__pycache__/
 *.pt
 *.ipynb_checkpoints
 
+# Fine-tuning artifacts and downloaded Bible data
+asr_finetune/
+data/bible/
