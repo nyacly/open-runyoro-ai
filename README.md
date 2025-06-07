@@ -1,4 +1,4 @@
-# Open Runyoro AI 🇷🇼🇺🇬🇹🇿
+# Open Runyoro AI 🇺🇬
 
 **Our Vision:** To build open-source AI tools that can read, understand, and speak Runyoro, helping to preserve and promote the language in the digital age.
 
@@ -10,10 +10,11 @@ This project aims to create datasets and models for Natural Language Processing 
     *   **Text Corpus:** Collect a diverse and large corpus of written Runyoro.
     *   **Speech Corpus:** Collect transcribed Runyoro audio from native speakers.
 2.  **Model Development (Future):**
-    *   Text-to-Speech (TTS) for Runyoro.
+    *   Text-to-Speech (TTS) for Runyoro *(planned)*.
     *   Automatic Speech Recognition (ASR) for Runyoro.
     *   Machine Translation (e.g., Runyoro <-> English).
     *   Other NLP tools (e.g., part-of-speech taggers, named entity recognizers).
+    *   A minimal audio preprocessing example is available in `scripts/preprocess_audio.py`.
 
 ## 🚀 How to Contribute
 
@@ -27,14 +28,14 @@ This is the most crucial part of the project right now. High-quality data is the
     *   We need plain text files (.txt) containing Runyoro.
     *   Sources can include: books, articles, websites, blogs, proverbs, folk tales, personal writings, etc.
     *   Please ensure the text is in Runyoro and as clean as possible.
-    *   **How to submit:** Place your `.txt` files in the `data/text/` directory via a Pull Request. See our [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+    *   **How to submit:** Place your `.txt` files in the `data/text/` directory via a Pull Request.
 *   **Audio Data:**
     *   We need audio recordings (.wav, .mp3, .flac) of spoken Runyoro **along with their accurate transcriptions.**
     *   Ideal audio is clear, with minimal background noise, spoken by a single speaker per file.
     *   **How to submit:**
         1.  Place your audio files in `data/audio/wavs/` (this directory should now exist).
         2.  Create/update a `data/audio/metadata.csv` file with the filename and its transcription. Format: `filename|transcription`. Example: `wavs/runyoro_sentence1.wav|Ekicweka ky'orubazo rwa Runyoro.` (Note: The path in metadata.csv is relative to the `data/audio/` directory).
-        3.  Submit via a Pull Request. See our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed instructions, especially regarding audio quality and transcription format.
+        3.  Submit via a Pull Request. Follow the audio quality and transcription guidelines in this README.
     *   **Important for Audio:** We use Git LFS for large audio files. Ensure you have it installed (`git lfs install` system-wide or per-user, then the `.gitattributes` file handles repo-specific tracking).
 
 **2. Code Contributions:**
@@ -47,7 +48,7 @@ This is the most crucial part of the project right now. High-quality data is the
 **4. Documentation & Community:**
     *   Improve this README, write tutorials, help answer questions.
 
-Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+Please read the guidelines in this README and open an issue if you have questions.
 
 ## 📂 Repository Structure
 
@@ -56,7 +57,8 @@ Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
     *   `data/audio/`: Speech data.
         *   `data/audio/wavs/`: Audio files (e.g., .wav)
         *   `data/audio/metadata.csv`: Transcriptions for audio files (contributors will create/update this with their audio).
-*   `scripts/`: Scripts for data processing, training, etc. (Future)
+*   `scripts/`: Utility scripts. Currently includes a simple audio
+    preprocessing example. More training helpers will be added over time.
 *   `models/`: Trained model files. (Future)
 *   `docs/`: Documentation. (Future)
 
@@ -69,8 +71,10 @@ This project includes a way to interactively chat with the trained Runyoro langu
 1.  **Trained Model:** Ensure you have a trained model. The training script `scripts/train_text.py` saves its output to the `models/text/` directory by default. This chat script expects the model and tokenizer to be present there.
 2.  **Dependencies:** Install the necessary Python packages:
     ```bash
+    # Install exact versions known to work with our notebooks
     pip install -r requirements.txt
     ```
+    These versions are pinned in `requirements.txt` and are tested with the training notebooks.
 
 ### Running the Chat Script
 
@@ -116,6 +120,7 @@ This section guides you on how to use the provided Google Colab notebooks for tr
     *   Open the relevant Colab notebook.
     *   Run the first code cell that installs requirements:
         ```python
+        # Installs the same pinned versions used during development
         !pip install -r requirements.txt
         ```
     *   Some notebooks (e.g., `youtube_data_ingestion_colab.ipynb`, `speechbrain_ssl_training_colab.ipynb`) may also have cells to ensure `ffmpeg` is available.
@@ -183,6 +188,31 @@ For SSL training (e.g., HuBERT-style), there is a three-notebook workflow:
         *   `KMEANS_TARGET_DIR_FULL_PATH_DRIVE`: **Crucially**, this must point to the output directory from the `generate_kmeans_targets_colab.ipynb` notebook (step 3.2.2), where the `<utt_id>_kmeans_labels.npy` files are stored.
     *   The notebook adapts an `hparams_ssl.yaml` file for Colab, overriding key paths to point to your Drive locations.
 
+#### 3.3 Fine-tune ASR with Bible data (`notebooks/runyoro_bible_asr_finetune.ipynb`)
+
+*   **Purpose**: This notebook provides an end-to-end pipeline to fine-tune an Automatic Speech Recognition (ASR) model for Runyoro using Bible audio and text data. It leverages a pre-trained SSL (Self-Supervised Learning) model as the encoder and adds a CTC (Connectionist Temporal Classification) head for ASR.
+*   **Workflow**:
+    1.  **Setup**: Detects Colab/local environment, installs dependencies, and configures project paths.
+    2.  **Configuration**: Uses UI widgets to input your DBP API Key, desired Bible ID (e.g., `NYOBSN` for Runyoro audio), text fileset ID (e.g., `NYOTBTN2ET` for Runyoro text), specific books for download (optional), path to your pre-trained SSL checkpoint (`.ckpt` file), and number of fine-tuning epochs.
+    3.  **Data Download**: Calls a script to download audio chapters and corresponding verse texts from the Bible Brain API for the specified Bible ID and books.
+    4.  **Manifest Creation**: Calls a script to process the downloaded data and create a JSON manifest file in the format required by SpeechBrain.
+    5.  **ASR Fine-tuning**:
+        *   Dynamically generates a hyperparameter YAML file based on notebook inputs.
+        *   Calls the main training script `train_ctc.py` (not yet included).
+        *   This script loads your SSL encoder checkpoint, trains a SentencePiece tokenizer on the downloaded Bible text, attaches a CTC head to the encoder, and fine-tunes the model for the specified number of epochs.
+        *   The encoder is typically frozen for the first epoch and then unfrozen for further fine-tuning.
+    6.  **Output**:
+        *   Fine-tuned ASR model checkpoints are saved (e.g., in `asr_finetune_output/[experiment_name]/save/CKPT+...`). The notebook also refers to the original issue's desired path `asr_finetune/checkpoints/epoch{n}.ckpt`, so ensure your training script's checkpointer configuration in the YAML matches your desired output structure.
+        *   The notebook includes a section to demonstrate decoding a few sample audio clips using the trained model and display the transcriptions.
+*   **Key Inputs**:
+    *   DBP API Key.
+    *   Bible ID for audio (e.g., `NYOBSN`).
+    *   Text Fileset ID for transcripts (e.g., `NYOTBTN2ET`).
+    *   Path to your pre-trained SSL model checkpoint.
+    *   Number of epochs for fine-tuning.
+*   **Running**: Follow the instructions and execute cells sequentially in the `notebooks/runyoro_bible_asr_finetune.ipynb` notebook. It will guide you through each step from data download to ASR model fine-tuning.
+
+
 ### 4. Running the Training Notebooks
 
 *   Open the desired training notebook in Google Colab.
@@ -199,7 +229,7 @@ For SSL training (e.g., HuBERT-style), there is a three-notebook workflow:
 
 ## 📜 License
 
-*   **Code:** Licensed under the [MIT License](LICENSE.md) (You'll need to create this file, or ask Jules to create it with a standard MIT template).
+*   **Code:** Licensed under the [MIT License](LICENSE.md).
 *   **Data:** We encourage contributors to submit data under permissive licenses like Creative Commons (e.g., CC-BY-SA 4.0). Please specify the license for any data you contribute if it's not your original work or if you wish to use a specific license. By default, contributions of original data by contributors are assumed to be under [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) unless otherwise specified.
 
 ## 💬 Get in Touch
@@ -209,3 +239,7 @@ For SSL training (e.g., HuBERT-style), there is a three-notebook workflow:
 
 ---
 *Let's build something amazing for the Runyoro language!*
+
+## Future Work
+
+Training scripts for TTS models are still a work in progress. Contributions are welcome!

@@ -37,6 +37,7 @@ def ensure_logs_dir_for_make_chat():
     Path("logs").mkdir(exist_ok=True)
 
 def test_make_chat_basic(tmp_path):
+    pytest.importorskip("spacy")
     # 1. Setup
     sample_input_path = tmp_path / "sample_input.txt"
     output_jsonl_path = tmp_path / "output.jsonl"
@@ -152,4 +153,3 @@ def test_make_chat_basic(tmp_path):
     # 8 vocab lines, 5 other lines. Total ~24-25 sentences.
     # The test script currently logs "Detected X dialogue/vocab/other segments" based on matching these sentences.
     # This is what we are asserting above.
-```
